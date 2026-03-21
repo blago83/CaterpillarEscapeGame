@@ -1,19 +1,6 @@
-[gd_scene load_steps=4 format=3 uid="uid://mainmenu"]
+[gd_scene load_steps=2 format=3 uid="uid://mainmenu"]
 
 [ext_resource type="Script" path="res://scripts/main_menu.gd" id="1_script"]
-[ext_resource type="Texture2D" uid="uid://jdooior7omfw" path="res://assets/ui/title_banner.png" id="2_title"]
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_panel"]
-bg_color = Color(0.129412, 0.266667, 0.0901961, 0.901961)
-border_width_left = 5
-border_width_top = 5
-border_width_right = 5
-border_width_bottom = 5
-border_color = Color(0.615686, 0.854902, 0.313726, 1)
-corner_radius_top_left = 36
-corner_radius_top_right = 36
-corner_radius_bottom_right = 36
-corner_radius_bottom_left = 36
 
 [node name="MainMenu" type="Control"]
 layout_mode = 3
@@ -31,61 +18,42 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.360784, 0.607843, 0.243137, 1)
+color = Color(0.18, 0.42, 0.14, 1)
 
-[node name="TextureRect" type="TextureRect" parent="."]
+[node name="VBox" type="VBoxContainer" parent="."]
 layout_mode = 1
-anchors_preset = -1
-anchor_left = 0.1
-anchor_top = 0.07
-anchor_right = 0.9
-anchor_bottom = 0.22
-grow_horizontal = 2
-texture = ExtResource("2_title")
-expand_mode = 1
-stretch_mode = 5
-
-[node name="CenterPanel" type="Panel" parent="."]
-layout_mode = 1
-anchors_preset = -1
-anchor_left = 0.18
-anchor_top = 0.28
-anchor_right = 0.82
-anchor_bottom = 0.85
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -250.0
+offset_top = -200.0
+offset_right = 250.0
+offset_bottom = 200.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_panel")
+theme_override_constants/separation = 30
 
-[node name="VBoxContainer" type="VBoxContainer" parent="CenterPanel"]
+[node name="Title" type="Label" parent="VBox"]
 layout_mode = 2
-offset_left = 58.0
-offset_top = 90.0
-offset_right = 634.0
-offset_bottom = 740.0
-theme_override_constants/separation = 24
-
-[node name="Tagline" type="Label" parent="CenterPanel/VBoxContainer"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 44
-text = "Cute maze puzzle prototype
-built for Godot 4"
+theme_override_font_sizes/font_size = 64
+text = "🐛 Caterpillar
+Escape"
 horizontal_alignment = 1
 
-[node name="PlayButton" type="Button" parent="CenterPanel/VBoxContainer"]
-custom_minimum_size = Vector2(0, 90)
+[node name="Spacer" type="Control" parent="VBox"]
+custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
-theme_override_font_sizes/font_size = 40
+
+[node name="PlayButton" type="Button" parent="VBox"]
+custom_minimum_size = Vector2(0, 80)
+layout_mode = 2
+theme_override_font_sizes/font_size = 36
 text = "Play"
 
-[node name="QuitButton" type="Button" parent="CenterPanel/VBoxContainer"]
-custom_minimum_size = Vector2(0, 90)
+[node name="QuitButton" type="Button" parent="VBox"]
+custom_minimum_size = Vector2(0, 80)
 layout_mode = 2
-theme_override_font_sizes/font_size = 40
+theme_override_font_sizes/font_size = 36
 text = "Quit"
-
-[node name="Tips" type="Label" parent="CenterPanel/VBoxContainer"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 28
-text = "Swipe or use arrow keys.
-Collect every leaf before using the exit."
-horizontal_alignment = 1

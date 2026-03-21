@@ -1,42 +1,18 @@
-[gd_scene load_steps=4 format=3 uid="uid://level"]
+[gd_scene load_steps=2 format=3]
 
 [ext_resource type="Script" path="res://scripts/level.gd" id="1_script"]
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_hud"]
-bg_color = Color(0.101961, 0.180392, 0.0705882, 0.86)
-corner_radius_top_left = 24
-corner_radius_top_right = 24
-corner_radius_bottom_right = 24
-corner_radius_bottom_left = 24
-border_width_left = 4
-border_width_top = 4
-border_width_right = 4
-border_width_bottom = 4
-border_color = Color(0.835294, 0.921569, 0.545098, 1)
-
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_win"]
-bg_color = Color(0.996078, 0.968627, 0.796078, 0.97)
-corner_radius_top_left = 30
-corner_radius_top_right = 30
-corner_radius_bottom_right = 30
-corner_radius_bottom_left = 30
-border_width_left = 5
-border_width_top = 5
-border_width_right = 5
-border_width_bottom = 5
-border_color = Color(0.278431, 0.458824, 0.109804, 1)
 
 [node name="Level" type="Node2D"]
 script = ExtResource("1_script")
 
-[node name="Background" type="ColorRect" parent="."]
-offset_right = 1080.0
-offset_bottom = 1920.0
-color = Color(0.423529, 0.686275, 0.25098, 1)
+[node name="Camera2D" type="Camera2D" parent="."]
+zoom = Vector2(1.0, 1.0)
 
-[node name="World" type="Node2D" parent="."]
+[node name="MazeLayer" type="Node2D" parent="."]
 
-[node name="Segments" type="Node2D" parent="."]
+[node name="ObjectsLayer" type="Node2D" parent="."]
+
+[node name="CaterpillarLayer" type="Node2D" parent="."]
 
 [node name="CanvasLayer" type="CanvasLayer" parent="."]
 
@@ -45,91 +21,72 @@ layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
+mouse_filter = 2
 
-[node name="MarginContainer" type="MarginContainer" parent="CanvasLayer/HUD"]
+[node name="TopBar" type="HBoxContainer" parent="CanvasLayer/HUD"]
 layout_mode = 1
 anchors_preset = 10
-anchor_left = 0.03
-anchor_top = 0.03
-anchor_right = 0.97
-anchor_bottom = 0.12
-theme_override_constants/margin_left = 18
-theme_override_constants/margin_top = 18
-theme_override_constants/margin_right = 18
-theme_override_constants/margin_bottom = 18
+anchor_right = 1.0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = -20.0
+offset_bottom = 80.0
+theme_override_constants/separation = 20
 
-[node name="Panel" type="Panel" parent="CanvasLayer/HUD/MarginContainer"]
-layout_mode = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_hud")
-
-[node name="HBoxContainer" type="HBoxContainer" parent="CanvasLayer/HUD/MarginContainer/Panel"]
-layout_mode = 2
-offset_left = 18.0
-offset_top = 16.0
-offset_right = 984.0
-offset_bottom = 110.0
-theme_override_constants/separation = 16
-
-[node name="InfoLabel" type="Label" parent="CanvasLayer/HUD/MarginContainer/Panel/HBoxContainer"]
+[node name="InfoLabel" type="Label" parent="CanvasLayer/HUD/TopBar"]
 layout_mode = 2
 size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 30
+theme_override_font_sizes/font_size = 28
 text = "Level 1"
 
-[node name="RetryButton" type="Button" parent="CanvasLayer/HUD/MarginContainer/Panel/HBoxContainer"]
+[node name="RetryButton" type="Button" parent="CanvasLayer/HUD/TopBar"]
 layout_mode = 2
-custom_minimum_size = Vector2(140, 60)
-theme_override_font_sizes/font_size = 24
+custom_minimum_size = Vector2(120, 0)
+theme_override_font_sizes/font_size = 22
 text = "Retry"
 
-[node name="MenuButton" type="Button" parent="CanvasLayer/HUD/MarginContainer/Panel/HBoxContainer"]
+[node name="MenuButton" type="Button" parent="CanvasLayer/HUD/TopBar"]
 layout_mode = 2
-custom_minimum_size = Vector2(140, 60)
-theme_override_font_sizes/font_size = 24
+custom_minimum_size = Vector2(120, 0)
+theme_override_font_sizes/font_size = 22
 text = "Menu"
 
 [node name="WinPanel" type="ColorRect" parent="CanvasLayer"]
 visible = false
-layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
-color = Color(0, 0, 0, 0.38)
+color = Color(0, 0, 0, 0.5)
 
-[node name="Center" type="Panel" parent="CanvasLayer/WinPanel"]
+[node name="VBox" type="VBoxContainer" parent="CanvasLayer/WinPanel"]
 layout_mode = 1
 anchors_preset = 8
-anchor_left = 0.14
-anchor_top = 0.34
-anchor_right = 0.86
-anchor_bottom = 0.72
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -200.0
+offset_top = -150.0
+offset_right = 200.0
+offset_bottom = 150.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_win")
+theme_override_constants/separation = 20
 
-[node name="VBoxContainer" type="VBoxContainer" parent="CanvasLayer/WinPanel/Center"]
+[node name="Title" type="Label" parent="CanvasLayer/WinPanel/VBox"]
 layout_mode = 2
-offset_left = 42.0
-offset_top = 36.0
-offset_right = 720.0
-offset_bottom = 412.0
-theme_override_constants/separation = 18
-
-[node name="Title" type="Label" parent="CanvasLayer/WinPanel/Center/VBoxContainer"]
-layout_mode = 2
-theme_override_font_sizes/font_size = 46
+theme_override_font_sizes/font_size = 48
 text = "Level Complete!"
 horizontal_alignment = 1
 
-[node name="SubTitle" type="Label" parent="CanvasLayer/WinPanel/Center/VBoxContainer"]
+[node name="SubTitle" type="Label" parent="CanvasLayer/WinPanel/VBox"]
 layout_mode = 2
 theme_override_font_sizes/font_size = 28
-text = "Nice work."
+text = "Nice work!"
 horizontal_alignment = 1
-autowrap_mode = 2
 
-[node name="NextButton" type="Button" parent="CanvasLayer/WinPanel/Center/VBoxContainer"]
+[node name="NextButton" type="Button" parent="CanvasLayer/WinPanel/VBox"]
 layout_mode = 2
-custom_minimum_size = Vector2(0, 84)
-theme_override_font_sizes/font_size = 34
+custom_minimum_size = Vector2(0, 70)
+theme_override_font_sizes/font_size = 30
 text = "Next Level"
