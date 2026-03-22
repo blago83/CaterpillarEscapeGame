@@ -1,58 +1,55 @@
 extends Node2D
-## Wall tile – draws a green bush block with pseudo-3D depth.
+## Wall tile – bush sprites for maze walls.
+## Horizontal walls use a random bush_horizontal (1-7).
+## Vertical walls use bush_vertical.
+## Corners/junctions draw both overlaid.
 
-const S := 64.0 * 0.5
-const DEPTH := 8.0  # pixels of vertical extrusion
-const BUSH_BASE := Color(0.22, 0.52, 0.15)
-const BUSH_DARK := Color(0.12, 0.3, 0.06)
-const BUSH_SIDE := Color(0.14, 0.35, 0.08)
-const BUSH_LIGHT := Color(0.35, 0.65, 0.22)
-const BUSH_HIGHLIGHT := Color(0.55, 0.82, 0.38)
-const SHADOW_COLOR := Color(0, 0, 0, 0.25)
+const CELL := 64.0
+const HALF := CELL * 0.5
+
+# Content regions inside the 128x128 canvases (skip transparent padding)
+const H_SRC := Rect2(0.0, 16.0, 128.0, 96.0)   # horizontal: 128x96 content
+const V_SRC := Rect2(16.0, 0.0, 96.0, 128.0)    # vertical:   96x128 content
+
+# Draw size: scale content to fill the cell + 73% bigger (1.44 * 1.2)
+const H_DRAW := Vector2(CELL, CELL * 96.0 / 128.0) * 1.728
+const V_DRAW := Vector2(CELL * 96.0 / 128.0, CELL) * 1.728
+
+var _h_textures: Array[Texture2D] = [
+	preload("res://assets/landscape/bush_horizontal_1.png"),
+	preload("res://assets/landscape/bush_horizontal_2.png"),
+	preload("res://assets/landscape/bush_horizontal_3.png"),
+	preload("res://assets/landscape/bush_horizontal_4.png"),
+	preload("res://assets/landscape/bush_horizontal_5.png"),
+	preload("res://assets/landscape/bush_horizontal_6.png"),
+	preload("res://assets/landscape/bush_horizontal_7.png"),
+]
+var _v_texture: Texture2D = preload("res://assets/landscape/bush_vertical.png")
 
 func _draw() -> void:
 	var has_t: bool = get_meta("has_t", false)
 	var has_b: bool = get_meta("has_b", false)
 	var has_l: bool = get_meta("has_l", false)
 	var has_r: bool = get_meta("has_r", false)
+	var idx: int = get_meta("variant", 0) % _h_textures.size()
 
-	# Drop shadow behind the block (offset down-right)
-	if not has_b:
-		draw_rect(Rect2(-S + 3, S, S * 2, DEPTH), SHADOW_COLOR)
-	if not has_r:
-		draw_rect(Rect2(S, -S + 3, DEPTH, S * 2), SHADOW_COLOR)
+	var needs_h := has_l or has_r
+	var needs_v := has_t or has_b
+	var isolated := not needs_h and not needs_v
 
-	# Bottom side face (extrusion) – visible when no wall below
-	if not has_b:
-		draw_rect(Rect2(-S, S - 1, S * 2, DEPTH + 1), BUSH_SIDE)
-	# Right side face – visible when no wall to the right
-	if not has_r:
-		draw_rect(Rect2(S - 1, -S, DEPTH + 1, S * 2), BUSH_SIDE.darkened(0.1))
+	# Draw horizontal bush (or isolated fallback)
+	if needs_h or isolated:
+		var tex := _h_textures[idx]
+		var dest := Rect2(-H_DRAW * 0.5, H_DRAW)
+		draw_texture_rect_region(tex, dest, H_SRC)
 
-	# Main top face
-	draw_rect(Rect2(-S, -S, S * 2, S * 2), BUSH_BASE)
+	# Draw vertical bush
+	if needs_v:
+		var dest := Rect2(-V_DRAW * 0.5, V_DRAW)
+		draw_texture_rect_region(_v_texture, dest, V_SRC)
 
-	# Leafy bush bumps – circles for organic look
-	draw_circle(Vector2(-S * 0.35, -S * 0.4), S * 0.38, BUSH_LIGHT)
-	draw_circle(Vector2(S * 0.35, -S * 0.3), S * 0.35, BUSH_BASE.lightened(0.08))
-	draw_circle(Vector2(-S * 0.3, S * 0.35), S * 0.36, BUSH_BASE.lightened(0.05))
-	draw_circle(Vector2(S * 0.4, S * 0.4), S * 0.34, BUSH_LIGHT)
-	draw_circle(Vector2(0, 0), S * 0.4, BUSH_BASE.lightened(0.1))
-
-	# Highlight dots (dew / leaf tips)
-	draw_circle(Vector2(-S * 0.2, -S * 0.55), S * 0.12, BUSH_HIGHLIGHT)
-	draw_circle(Vector2(S * 0.5, -S * 0.1), S * 0.1, BUSH_HIGHLIGHT)
-	draw_circle(Vector2(-S * 0.1, S * 0.4), S * 0.11, BUSH_HIGHLIGHT)
-	draw_circle(Vector2(S * 0.3, -S * 0.55), S * 0.09, BUSH_HIGHLIGHT)
-
-	# Top bevel – bright edge along top and left for light direction
-	if not has_t:
-		draw_rect(Rect2(-S, -S, S * 2, 3), BUSH_LIGHT.lightened(0.15))
-	if not has_l:
-		draw_rect(Rect2(-S, -S, 3, S * 2), BUSH_LIGHT.lightened(0.08))
-
-	# Dark inner edge on bottom and right for depth
-	if not has_b:
-		draw_rect(Rect2(-S, S - 2, S * 2, 2), BUSH_DARK)
-	if not has_r:
-		draw_rect(Rect2(S - 2, -S, 2, S * 2), BUSH_DARK)
+	# Debug label
+	var font := ThemeDB.fallback_font
+	var label := str(idx + 1)
+	draw_string(font, Vector2(-5, 5), label, HORIZONTAL_ALIGNMENT_CENTER, -1, 16, Color.BLACK)
+	draw_string(font, Vector2(-4, 6), label, HORIZONTAL_ALIGNMENT_CENTER, -1, 16, Color.WHITE)

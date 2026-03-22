@@ -197,6 +197,9 @@ func load_level(idx: int) -> void:
 	bg.position = Vector2.ZERO
 	bg.size = Vector2(maze_w * CELL, maze_h * CELL)
 	bg.stretch_mode = TextureRect.STRETCH_TILE
+	bg.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	bg.scale = Vector2(0.5, 0.5)
+	bg.size = Vector2(maze_w * CELL, maze_h * CELL) / 0.5
 	maze_layer.add_child(bg)
 
 	# Pass 1: collect wall positions
@@ -255,6 +258,8 @@ func _make_wall(cell: Vector2i) -> void:
 	node.set_meta("has_b", wall_set.has(cell + Vector2i.DOWN))
 	node.set_meta("has_l", wall_set.has(cell + Vector2i.LEFT))
 	node.set_meta("has_r", wall_set.has(cell + Vector2i.RIGHT))
+	# Deterministic variant index based on cell position for visual variety
+	node.set_meta("variant", absi(cell.x * 7 + cell.y * 13) % 8)
 	maze_layer.add_child(node)
 
 func _make_leaf(cell: Vector2i) -> void:
