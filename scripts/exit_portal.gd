@@ -8,6 +8,8 @@ func _process(delta: float) -> void:
 	_time += delta
 	queue_redraw()
 
+const SHADOW := Vector2(4, 5)
+
 func _draw() -> void:
 	var is_open: bool = get_meta("open", false)
 	var base: Color
@@ -15,10 +17,16 @@ func _draw() -> void:
 		base = Color(0.85, 0.7, 1.0)
 	else:
 		base = Color(0.5, 0.35, 0.6)
+	# Drop shadow
+	draw_circle(SHADOW, S * 0.7, Color(0, 0, 0, 0.25))
 	# Outer portal ring
 	draw_circle(Vector2.ZERO, S * 0.7, base)
-	# Inner
+	# Bottom shading for depth
+	draw_circle(Vector2(0, S * 0.1), S * 0.5, base.darkened(0.2))
+	# Inner (brighter center)
 	draw_circle(Vector2.ZERO, S * 0.4, base.lightened(0.3))
+	# Top specular
+	draw_circle(Vector2(-S * 0.12, -S * 0.18), S * 0.22, base.lightened(0.45))
 	if is_open:
 		# Pulsing glow
 		var pulse := (sin(_time * 4.0) + 1.0) * 0.5

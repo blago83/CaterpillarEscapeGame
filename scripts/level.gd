@@ -14,7 +14,7 @@ const WallScript := preload("res://scripts/wall_tile.gd")
 const LEVELS := [
 [
 "#######################",
-"#P..#.....#...........#",
+"#...#.....#...........E#",
 "#.#.#.###.#.#########.#",
 "#.#...#.....#.......#.#",
 "#.#####.#####.#####.#.#",
@@ -46,12 +46,12 @@ const LEVELS := [
 "#.#.#######.#########.#",
 "#.#.......S.......#...#",
 "#.###############.###.#",
-"#...............#.....E#",
+"#P..............#.....#",
 "#######################",
 ],
 [
 "###########################",
-"#P....#.........#.........#",
+"#.....#.........#.........E#",
 "#.###.#.#######.#.#######.#",
 "#...#.#.#.......#.......#.#",
 "###.#.#.#.#####.#######.#.#",
@@ -87,12 +87,12 @@ const LEVELS := [
 "#.#.#################.###.#",
 "#.#.....L.....#.......#...#",
 "#.#############.#########.#",
-"#...............#.........E#",
+"#P..............#.........#",
 "###########################",
 ],
 [
 "###############################",
-"#P..#.......#.........#.......#",
+"#...#.......#.........#......E#",
 "#.#.#.#####.#.#######.#.#####.#",
 "#.#.#.....#.#.#.......#.#...#.#",
 "#.#.#####.#.#.#.#######.#.#.#.#",
@@ -130,7 +130,7 @@ const LEVELS := [
 "#######.#########.###.#.#.#.###",
 "#.......#.........#.S.#.#.#...#",
 "#.#######.#########.###.#.###.#",
-"#.................L.#...#.....E#",
+"#P................L.#...#.....#",
 "###############################",
 ],
 ]
@@ -138,7 +138,7 @@ const LEVELS := [
 var current_level: int = 0
 var wall_set: Dictionary = {}
 var player_cell: Vector2i = Vector2i.ZERO
-var facing: Vector2i = Vector2i.RIGHT
+var facing: Vector2i = Vector2i.UP
 var segment_cells: Array[Vector2i] = []
 var segment_nodes: Array[Node2D] = []
 var leaves: Dictionary = {}
@@ -148,6 +148,8 @@ var exit_node: Node2D = null
 var leaves_left: int = 0
 var is_busy: bool = false
 var swipe_start := Vector2.ZERO
+var move_timer: float = 0.0
+const MOVE_REPEAT_DELAY := 0.13
 
 @onready var cam: Camera2D = $Camera2D
 @onready var maze_layer: Node2D = $MazeLayer
@@ -230,10 +232,10 @@ func load_level(idx: int) -> void:
 	cam.limit_right = maze_w * CELL
 	cam.limit_bottom = maze_h * CELL
 
-	# Caterpillar (3 segments trailing left)
+	# Caterpillar (3 segments trailing down from start)
 	segment_cells = [player_cell]
 	for i in range(1, 3):
-		segment_cells.append(player_cell + Vector2i.LEFT * i)
+		segment_cells.append(player_cell + Vector2i.DOWN * i)
 	_rebuild_caterpillar()
 	_update_hud()
 	cam.position = _pos(player_cell)
@@ -287,9 +289,11 @@ func _rebuild_caterpillar() -> void:
 		node.set_script(SegmentScript)
 		node.position = _pos(segment_cells[i])
 		node.set_meta("seg_type", _seg_type(i))
+		node.z_index = segment_cells.size() - i  # head on top, tail behind
 		cat_layer.add_child(node)
 		segment_nodes.append(node)
 	_update_rotations()
+	_update_taper()
 
 func _seg_type(i: int) -> String:
 	if i == 0:
@@ -306,6 +310,14 @@ func _update_rotations() -> void:
 		else:
 			dir = segment_cells[i - 1] - segment_cells[i]
 		segment_nodes[i].rotation = _dir_angle(dir)
+
+func _update_taper() -> void:
+	var n := segment_nodes.size()
+	for i in n:
+		var t := 1.0
+		if n > 1:
+			t = 1.0 - 0.2 * float(i) / float(n - 1)
+		segment_nodes[i].scale = Vector2(t, t)
 
 func _dir_angle(dir: Vector2i) -> float:
 	if dir == Vector2i.RIGHT: return 0.0
@@ -328,15 +340,32 @@ func _input(event: InputEvent) -> void:
 				else:
 					_try_move(Vector2i.DOWN if delta.y > 0 else Vector2i.UP)
 
+func _get_held_dir() -> Vector2i:
+	if Input.is_action_pressed("move_up"): return Vector2i.UP
+	if Input.is_action_pressed("move_down"): return Vector2i.DOWN
+	if Input.is_action_pressed("move_left"): return Vector2i.LEFT
+	if Input.is_action_pressed("move_right"): return Vector2i.RIGHT
+	return Vector2i.ZERO
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("move_up"):
-		_try_move(Vector2i.UP)
+		_try_move(Vector2i.UP); move_timer = 0.0
 	elif event.is_action_pressed("move_down"):
-		_try_move(Vector2i.DOWN)
+		_try_move(Vector2i.DOWN); move_timer = 0.0
 	elif event.is_action_pressed("move_left"):
-		_try_move(Vector2i.LEFT)
+		_try_move(Vector2i.LEFT); move_timer = 0.0
 	elif event.is_action_pressed("move_right"):
-		_try_move(Vector2i.RIGHT)
+		_try_move(Vector2i.RIGHT); move_timer = 0.0
+
+func _process(delta: float) -> void:
+	var dir := _get_held_dir()
+	if dir == Vector2i.ZERO:
+		move_timer = 0.0
+		return
+	move_timer += delta
+	if move_timer >= MOVE_REPEAT_DELAY:
+		move_timer -= MOVE_REPEAT_DELAY
+		_try_move(dir)
 
 # ── Movement ──
 
@@ -351,7 +380,7 @@ func _try_move(dir: Vector2i) -> void:
 	if segment_cells.has(target) and target != segment_cells[-1]:
 		_bump()
 		return
-	await _move_to(target)
+	_move_to(target)
 
 func _move_to(target: Vector2i) -> void:
 	is_busy = true
@@ -360,16 +389,16 @@ func _move_to(target: Vector2i) -> void:
 	for i in range(1, segment_cells.size()):
 		segment_cells[i] = prev[i - 1]
 
-	# Animate segments
+	# Animate segments (non-blocking)
+	var anim_dur := 0.11
 	for i in segment_nodes.size():
 		var tw := create_tween()
-		tw.tween_property(segment_nodes[i], "position", _pos(segment_cells[i]), 0.12) \
+		tw.tween_property(segment_nodes[i], "position", _pos(segment_cells[i]), anim_dur) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	# Animate camera
 	var ctw := create_tween()
-	ctw.tween_property(cam, "position", _pos(target), 0.12) \
+	ctw.tween_property(cam, "position", _pos(target), anim_dur) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	await get_tree().create_timer(0.13).timeout
 
 	# Collect leaf
 	if leaves.has(target):
@@ -382,13 +411,18 @@ func _move_to(target: Vector2i) -> void:
 		node.set_script(SegmentScript)
 		node.position = _pos(new_cell)
 		node.set_meta("seg_type", "tail")
+		node.z_index = 0
 		cat_layer.add_child(node)
 		segment_nodes.append(node)
 		if segment_nodes.size() > 2:
 			segment_nodes[-2].set_meta("seg_type", "body")
 			segment_nodes[-2].queue_redraw()
+		# Refresh z_index so head stays on top
+		for zi in segment_nodes.size():
+			segment_nodes[zi].z_index = segment_nodes.size() - zi
 
 	_update_rotations()
+	_update_taper()
 	for n in segment_nodes:
 		n.queue_redraw()
 
@@ -407,7 +441,7 @@ func _move_to(target: Vector2i) -> void:
 		return
 
 	_update_hud()
-	is_busy = false
+	is_busy = false  # release immediately — no await
 
 func _bump() -> void:
 	if segment_nodes.is_empty():
