@@ -9,6 +9,13 @@ const SpiderScript := preload("res://scripts/spider.gd")
 const ExitScript := preload("res://scripts/exit_portal.gd")
 const WallScript := preload("res://scripts/wall_tile.gd")
 
+# Horizontal piece textures – placed as full sprites along runs
+var _h_textures: Array[Texture2D] = [
+	preload("res://assets/tiles/horizontal.png"),
+	preload("res://assets/tiles/horizontal_2.png"),
+	preload("res://assets/tiles/horizontal_3.png"),
+]
+
 # Large mazes with consistent rectangular bounds.
 # Legend: # wall, . path, P player, L leaf, S spider, E exit
 const LEVELS := [
@@ -193,23 +200,36 @@ func load_level(idx: int) -> void:
 			if row[x] == "#":
 				wall_set[Vector2i(x, y)] = true
 
-	# Pass 2: create walls
-	var wall_counter := 0
+	# Pass 2a: place horizontal runs as full piece sprites
 	for y in rows.size():
 		var row: String = rows[y]
-		var h_run_offset := 0
+		var run_start := -1
+		for x in range(row.length() + 1):
+			var is_wall := x < row.length() and row[x] == "#"
+			var cell := Vector2i(x, y)
+			var in_h_run := false
+			if is_wall:
+				in_h_run = wall_set.has(cell + Vector2i.LEFT) or wall_set.has(cell + Vector2i.RIGHT)
+			if in_h_run and run_start == -1:
+				run_start = x
+			elif not in_h_run and run_start != -1:
+				_place_h_run(y, run_start, x - 1)
+				run_start = -1
+
+	# Pass 2b: create wall nodes for vertical and isolated cells
+	for y in rows.size():
+		var row: String = rows[y]
 		for x in row.length():
 			if row[x] == "#":
 				var cell := Vector2i(x, y)
+				var has_t := wall_set.has(cell + Vector2i.UP)
+				var has_b := wall_set.has(cell + Vector2i.DOWN)
 				var has_l := wall_set.has(cell + Vector2i.LEFT)
 				var has_r := wall_set.has(cell + Vector2i.RIGHT)
-				if not has_l:
-					h_run_offset = 0
-				_make_wall(cell, wall_counter, h_run_offset if (has_l or has_r) else 0)
-				wall_counter += 1
-				h_run_offset += 1
-			else:
-				h_run_offset = 0
+				if (has_t or has_b) and not (has_l or has_r):
+					_make_wall_vert(cell)
+				elif not has_t and not has_b and not has_l and not has_r:
+					_make_wall_center(cell)
 
 	# Pass 3: non-wall entities
 	for y in rows.size():
@@ -250,18 +270,75 @@ func _pos(cell: Vector2i) -> Vector2:
 
 # ── Entity factories ──
 
-func _make_wall(cell: Vector2i, variant: int, h_run_offset: int) -> void:
+## Place full horizontal piece sprites along a run, never cutting any texture.
+## Pieces are scaled to exactly fill the run width with no overlap or overshoot.
+func _place_h_run(row: int, start_x: int, end_x: int) -> void:
+	var run_start_px := float(start_x) * CELL
+	var run_end_px := float(end_x + 1) * CELL
+	var run_width := run_end_px - run_start_px
+	var h := float(CELL)  # piece height = cell height, no overshoot
+
+	# First pass: compute natural widths and total to find scale factor
+	var natural_widths: Array[float] = []
+	var total_natural := 0.0
+	var idx := 0
+	var tmp_w := 0.0
+	while tmp_w < run_width - 0.1:
+		var tex: Texture2D = _h_textures[idx % _h_textures.size()]
+		var ratio := float(tex.get_width()) / float(tex.get_height())
+		var w := h * ratio
+		# Don't overshoot: if this piece would go past the end, stop
+		if tmp_w + w > run_width + w * 0.5:
+			break
+		natural_widths.append(w)
+		total_natural += w
+		tmp_w += w
+		idx += 1
+
+	# If no pieces fit (very short run), place one piece scaled to run width
+	if natural_widths.size() == 0:
+		var tex: Texture2D = _h_textures[0]
+		natural_widths.append(run_width)
+		total_natural = run_width
+
+	# Scale factor so pieces fill the run with slight overlap to close gaps
+	var h_overlap := 4.0  # px overlap between adjacent pieces
+	var total_with_overlap := total_natural - h_overlap * (natural_widths.size() - 1)
+	var scale_factor := run_width / total_with_overlap if total_with_overlap > 0.0 else 1.0
+
+	# Second pass: place pieces
+	var px := run_start_px
+	for i in natural_widths.size():
+		var tex: Texture2D = _h_textures[i % _h_textures.size()]
+		var w := natural_widths[i] * scale_factor
+
+		var sprite := Sprite2D.new()
+		sprite.texture = tex
+		sprite.position = Vector2(px + w * 0.5, float(row) * CELL + CELL * 0.5)
+		sprite.scale = Vector2(w / float(tex.get_width()), h / float(tex.get_height()))
+		sprite.z_index = row
+		maze_layer.add_child(sprite)
+
+		px += w - 4.0  # slight overlap to close gaps
+
+## Spawn a wall node that draws only a vertical piece.
+func _make_wall_vert(cell: Vector2i) -> void:
 	var node := Node2D.new()
 	node.set_script(WallScript)
 	node.position = _pos(cell)
-	node.set_meta("has_t", wall_set.has(cell + Vector2i.UP))
-	node.set_meta("has_b", wall_set.has(cell + Vector2i.DOWN))
-	node.set_meta("has_l", wall_set.has(cell + Vector2i.LEFT))
-	node.set_meta("has_r", wall_set.has(cell + Vector2i.RIGHT))
-	node.set_meta("variant", variant)
-	node.set_meta("h_run_offset", h_run_offset)
+	node.set_meta("mode", "vertical")
 	node.set_meta("cell_size", float(CELL))
-	node.z_index = cell.y  # higher rows render on top
+	node.z_index = cell.y
+	maze_layer.add_child(node)
+
+## Spawn a wall node that draws a center blob (isolated wall).
+func _make_wall_center(cell: Vector2i) -> void:
+	var node := Node2D.new()
+	node.set_script(WallScript)
+	node.position = _pos(cell)
+	node.set_meta("mode", "center")
+	node.set_meta("cell_size", float(CELL))
+	node.z_index = cell.y
 	maze_layer.add_child(node)
 
 func _make_leaf(cell: Vector2i) -> void:
