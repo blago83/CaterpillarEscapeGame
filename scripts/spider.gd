@@ -2,11 +2,18 @@ extends Node2D
 ## A spider hazard – causes restart on contact.
 
 const S := 64.0 * 0.5
+const SPIDER_DRAW := Vector2(60, 44)
+var _spider_tex: Texture2D = preload("res://assets/New/cross.png")
 
 const SHADOW := Vector2(4, 5)
 const SHADOW_COL := Color(0, 0, 0, 0.28)
 
 func _draw() -> void:
+	if _spider_tex != null:
+		draw_circle(SHADOW, SPIDER_DRAW.y * 0.42, SHADOW_COL)
+		draw_texture_rect(_spider_tex, Rect2(-SPIDER_DRAW * 0.5, SPIDER_DRAW), false)
+		return
+
 	var body_col := Color(0.15, 0.12, 0.12)
 	var head_col := Color(0.2, 0.15, 0.15)
 	# Drop shadow

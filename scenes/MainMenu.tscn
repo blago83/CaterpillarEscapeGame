@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3 uid="uid://mainmenu"]
+[gd_scene load_steps=3 format=3 uid="uid://mainmenu"]
 
 [ext_resource type="Script" path="res://scripts/main_menu.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://assets/New/Center.png" id="2_splash"]
 
 [node name="MainMenu" type="Control"]
 layout_mode = 3
@@ -19,6 +20,18 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 color = Color(0.18, 0.42, 0.14, 1)
+
+[node name="Splash" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("2_splash")
+expand_mode = 1
+stretch_mode = 6
+modulate = Color(1, 1, 1, 0.78)
 
 [node name="VBox" type="VBoxContainer" parent="."]
 layout_mode = 1

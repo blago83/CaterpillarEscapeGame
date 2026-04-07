@@ -2,7 +2,9 @@ extends Node2D
 ## A collectible leaf – gently sways.
 
 const S := 64.0 * 0.5
+const LEAF_DRAW := Vector2(44, 44)
 var _time := 0.0
+var _leaf_tex: Texture2D = preload("res://assets/New/Center.png")
 
 func _process(delta: float) -> void:
 	_time += delta
@@ -11,6 +13,12 @@ func _process(delta: float) -> void:
 const SHADOW := Vector2(3, 4)
 
 func _draw() -> void:
+	if _leaf_tex != null:
+		# Soft shadow under the sprite so it blends with the scene depth.
+		draw_circle(SHADOW, LEAF_DRAW.x * 0.32, Color(0, 0, 0, 0.2))
+		draw_texture_rect(_leaf_tex, Rect2(-LEAF_DRAW * 0.5, LEAF_DRAW), false)
+		return
+
 	var col := Color(0.2, 0.72, 0.15)
 	var pts := PackedVector2Array([
 		Vector2(0, -S * 0.55),

@@ -3,6 +3,8 @@ extends Node2D
 
 const S := 64.0 * 0.5
 var _time := 0.0
+var _closed_tex: Texture2D = preload("res://assets/New/Intersection_1.png")
+var _open_tex: Texture2D = preload("res://assets/New/Intersection_2.png")
 
 func _process(delta: float) -> void:
 	_time += delta
@@ -10,8 +12,27 @@ func _process(delta: float) -> void:
 
 const SHADOW := Vector2(4, 5)
 
+func _draw_size_for(tex: Texture2D) -> Vector2:
+	if tex == null:
+		return Vector2(S * 1.4, S * 1.4)
+	var src := tex.get_size()
+	if src.x <= 0.0 or src.y <= 0.0:
+		return Vector2(S * 1.4, S * 1.4)
+	var scale: float = 74.0 / max(src.x, src.y)
+	return src * scale
+
 func _draw() -> void:
 	var is_open: bool = get_meta("open", false)
+	var tex := _open_tex if is_open else _closed_tex
+	if tex != null:
+		var draw_sz := _draw_size_for(tex)
+		draw_circle(SHADOW, min(draw_sz.x, draw_sz.y) * 0.48, Color(0, 0, 0, 0.2))
+		draw_texture_rect(tex, Rect2(-draw_sz * 0.5, draw_sz), false)
+		if is_open:
+			var pulse := (sin(_time * 4.0) + 1.0) * 0.5
+			draw_circle(Vector2.ZERO, min(draw_sz.x, draw_sz.y) * 0.46, Color(1, 1, 1, pulse * 0.22))
+		return
+
 	var base: Color
 	if is_open:
 		base = Color(0.85, 0.7, 1.0)

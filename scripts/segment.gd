@@ -10,7 +10,7 @@ const SHOE_DARK := Color(0.6, 0.08, 0.08)
 const SHOE_SHINE := Color(1.0, 0.45, 0.4)
 const OVERLAP := 1.7  # draw body sprites 70% larger for visible overlap between segments
 
-var _body_tex: Texture2D = preload("res://assets/player/body_segment.png")
+var _body_tex: Texture2D = preload("res://assets/tiles/vertical-short.png")
 
 func _draw() -> void:
 	var seg_type: String = get_meta("seg_type", "body")

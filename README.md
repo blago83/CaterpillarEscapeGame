@@ -3,7 +3,7 @@
 This is a small but playable Godot 4 prototype for your caterpillar maze game.
 
 ## What's included
-- Cute built-in placeholder art with shoes
+- Integrated custom wall/background/player art from the assets folder
 - Main menu
 - 3 prototype levels
 - Grid movement
@@ -36,7 +36,7 @@ Legend:
 - `P` player start
 
 ## Good next upgrades
-- Replace placeholder art with higher-res sprite sheets
+- Add dedicated sprite art for leaf, spider, and exit portal
 - Add animation frames for head/body wiggle
 - Add sound effects and juice
 - Convert the maze to a TileMap
