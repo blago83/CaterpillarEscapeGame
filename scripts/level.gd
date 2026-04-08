@@ -371,13 +371,24 @@ func _rebuild_caterpillar() -> void:
 	for i in segment_cells.size():
 		var node := Node2D.new()
 		node.set_script(SegmentScript)
-		node.position = _pos(segment_cells[i])
 		node.set_meta("seg_type", _seg_type(i))
+		node.set_meta("seg_index", i)
 		node.z_index = segment_cells.size() - i  # head on top, tail behind
 		cat_layer.add_child(node)
 		segment_nodes.append(node)
+	_update_positions()
 	_update_rotations()
 	_update_taper()
+
+## Position segments with 10% overlap (each non-head segment shifts toward the one ahead).
+func _update_positions() -> void:
+	var overlap := float(CELL) * 0.30
+	for i in segment_nodes.size():
+		var base_pos := _pos(segment_cells[i])
+		if i > 0:
+			var dir := segment_cells[i - 1] - segment_cells[i]
+			base_pos += Vector2(dir) * overlap
+		segment_nodes[i].position = base_pos
 
 func _seg_type(i: int) -> String:
 	if i == 0:
@@ -473,11 +484,16 @@ func _move_to(target: Vector2i) -> void:
 	for i in range(1, segment_cells.size()):
 		segment_cells[i] = prev[i - 1]
 
-	# Animate segments (non-blocking)
+	# Animate segments (non-blocking) – use overlap-adjusted positions
 	var anim_dur := 0.11
+	var overlap := float(CELL) * 0.30
 	for i in segment_nodes.size():
+		var target_pos := _pos(segment_cells[i])
+		if i > 0:
+			var dir := segment_cells[i - 1] - segment_cells[i]
+			target_pos += Vector2(dir) * overlap
 		var tw := create_tween()
-		tw.tween_property(segment_nodes[i], "position", _pos(segment_cells[i]), anim_dur) \
+		tw.tween_property(segment_nodes[i], "position", target_pos, anim_dur) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	# Animate camera
 	var ctw := create_tween()
@@ -493,8 +509,12 @@ func _move_to(target: Vector2i) -> void:
 		segment_cells.append(new_cell)
 		var node := Node2D.new()
 		node.set_script(SegmentScript)
-		node.position = _pos(new_cell)
+		var new_pos := _pos(new_cell)
+		var dir_to_prev := segment_cells[segment_cells.size() - 2] - new_cell
+		new_pos += Vector2(dir_to_prev) * float(CELL) * 0.30
+		node.position = new_pos
 		node.set_meta("seg_type", "tail")
+		node.set_meta("seg_index", segment_cells.size() - 1)
 		node.z_index = 0
 		cat_layer.add_child(node)
 		segment_nodes.append(node)
