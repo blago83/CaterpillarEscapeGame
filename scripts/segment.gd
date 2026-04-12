@@ -1,153 +1,137 @@
 extends Node2D
-## Caterpillar segment – fully procedural pseudo-3D rendering.
+## Caterpillar segment – sprite-based rendering using caterpillar art assets.
 ## Set meta "seg_type" = "head" | "body" | "tail"
 ## Set meta "seg_index" = 0-based index from head
 
-const S := 64.0 * 0.5
-const SHADOW := Vector2(3, 4)
-const SHADOW_COL := Color(0, 0, 0, 0.25)
+const CELL := 64.0
 
-# ── Palette ──
-const GREEN_LIGHT  := Color(0.45, 0.82, 0.22)
-const GREEN_BASE   := Color(0.30, 0.68, 0.12)
-const GREEN_DARK   := Color(0.18, 0.48, 0.06)
-const GREEN_BELLY  := Color(0.55, 0.88, 0.35)
-const YELLOW_SPOT  := Color(0.85, 0.92, 0.25)
-const SHOE_COL     := Color(0.85, 0.15, 0.15)
-const SHOE_DARK    := Color(0.6, 0.08, 0.08)
-const SHOE_SHINE   := Color(1.0, 0.45, 0.4)
+# Preload caterpillar textures
+var _head_tex: Texture2D = preload("res://assets/caterpillar/caterpillar_face.png")
+var _head_vertical_tex: Texture2D = preload("res://assets/caterpillar/caterpillar_vertical_head_up.png")
+var _body_tex: Texture2D = preload("res://assets/caterpillar/Caterpillar_vertical.png")
+var _tail_tex: Texture2D = preload("res://assets/caterpillar/caterpillar_vertical_last.png")
 
-func _draw() -> void:
+var _sprite: Sprite2D
+var _leg_left: Sprite2D
+var _leg_right: Sprite2D
+var _leg_tex: Texture2D = preload("res://assets/caterpillar/leg.png")
+var _leg_phase := 0.0
+
+func _ready() -> void:
 	var seg_type: String = get_meta("seg_type", "body")
+
+	_sprite = Sprite2D.new()
 	match seg_type:
-		"head": _draw_head()
-		"tail": _draw_tail()
-		_: _draw_body()
+		"head":
+			_sprite.texture = _head_vertical_tex
+		_:
+			_sprite.texture = _body_tex
 
-# ── HEAD ──────────────────────────────────────────────────────────────────────
-func _draw_head() -> void:
-	var r := S * 0.78
+	# Sprites are drawn facing UP; rotate PI/2 to align with default RIGHT direction
+	_sprite.rotation = PI / 2.0
 
-	# Drop shadow
-	draw_circle(SHADOW, r, SHADOW_COL)
+	# Scale texture to fit within cell
+	var tex_w := float(_sprite.texture.get_width())
+	var tex_h := float(_sprite.texture.get_height())
+	var fit := CELL * 1.0
+	var s: float = fit / maxf(tex_w, tex_h)
+	_sprite.scale = Vector2(s, s)
 
-	# Base sphere
-	draw_circle(Vector2.ZERO, r, GREEN_BASE)
-	# Bottom shading (darker hemisphere)
-	draw_circle(Vector2(0, r * 0.2), r * 0.75, GREEN_DARK)
-	# Top highlight (light dome)
-	draw_circle(Vector2(-r * 0.15, -r * 0.22), r * 0.55, GREEN_LIGHT)
-	# Specular spot
-	draw_circle(Vector2(-r * 0.25, -r * 0.35), r * 0.2, Color(1, 1, 1, 0.3))
+	add_child(_sprite)
 
-	# Eyes – white sclera with 3D shading
-	for ey in [-1.0, 1.0]:
-		var ep := Vector2(r * 0.35, ey * r * 0.32)
-		# Eye shadow
-		draw_circle(ep + Vector2(1, 2), r * 0.24, Color(0, 0, 0, 0.15))
-		# Sclera
-		draw_circle(ep, r * 0.24, Color.WHITE)
-		# Iris
-		draw_circle(ep + Vector2(r * 0.06, 0), r * 0.15, Color(0.12, 0.12, 0.12))
-		# Pupil
-		draw_circle(ep + Vector2(r * 0.09, ey * r * 0.02), r * 0.08, Color.BLACK)
-		# Eye shine
-		draw_circle(ep + Vector2(-r * 0.04, -ey * r * 0.06), r * 0.07, Color(1, 1, 1, 0.8))
+	# Add legs to body and tail segments
+	if seg_type == "body" or seg_type == "tail":
+		var leg_offset_x := CELL * 0.3 if seg_type == "tail" else 0.0
+		var leg_s := (CELL * 0.35) / maxf(float(_leg_tex.get_width()), float(_leg_tex.get_height()))
+		# Left leg
+		_leg_left = Sprite2D.new()
+		_leg_left.texture = _leg_tex
+		_leg_left.scale = Vector2(leg_s, leg_s)
+		_leg_left.position = Vector2(-leg_offset_x, -CELL * 0.5)
+		_leg_left.z_index = -1
+		add_child(_leg_left)
+		# Right leg (mirrored)
+		_leg_right = Sprite2D.new()
+		_leg_right.texture = _leg_tex
+		_leg_right.scale = Vector2(leg_s, leg_s)
+		_leg_right.position = Vector2(-leg_offset_x, CELL * 0.5)
+		_leg_right.z_index = -1
+		add_child(_leg_right)
+		# Offset phase by segment index for varied motion
+		_leg_phase = float(get_meta("seg_index", 0)) * 0.5 * PI
 
-	# Antennae
-	for ay in [-1.0, 1.0]:
-		var a_base := Vector2(r * 0.15, ay * r * 0.55)
-		var a_tip := Vector2(r * 0.6, ay * r * 0.9)
-		var a_mid := Vector2(r * 0.45, ay * r * 0.8)
-		# Stalk
-		draw_line(a_base, a_mid, GREEN_DARK, 2.5, true)
-		draw_line(a_mid, a_tip, GREEN_DARK, 2.0, true)
-		# Bulb
-		draw_circle(a_tip, 4.5, GREEN_LIGHT)
-		draw_circle(a_tip + Vector2(-1, -1), 2.0, Color(1, 1, 1, 0.4))
+func wiggle_legs() -> void:
+	if not _leg_left or not _leg_right:
+		return
+	_leg_phase += 1.0
+	var angle := deg_to_rad(25.0)
+	var target_l := angle if fmod(_leg_phase, 2.0) < 1.0 else -angle
+	var target_r := -target_l
+	var dur := 0.12
+	var tw_l := create_tween()
+	tw_l.tween_property(_leg_left, "rotation", target_l, dur)
+	var tw_r := create_tween()
+	tw_r.tween_property(_leg_right, "rotation", target_r, dur)
 
-	# Smile
-	draw_arc(Vector2(r * 0.3, 0), r * 0.18, -0.8, 0.8, 10, Color(0.12, 0.35, 0.04), 2.0, true)
+func _apply_texture(tex: Texture2D) -> void:
+	_sprite.texture = tex
+	var tex_w := float(tex.get_width())
+	var tex_h := float(tex.get_height())
+	var fit := CELL * 1.0
+	var s: float = fit / maxf(tex_w, tex_h)
+	_sprite.scale = Vector2(s, s)
 
-	# Cheeks (blush)
-	for cy in [-1.0, 1.0]:
-		draw_circle(Vector2(r * 0.15, cy * r * 0.55), r * 0.12, Color(1.0, 0.5, 0.3, 0.2))
+func set_head_direction(_vertical: bool) -> void:
+	pass
 
-	# Shoes
-	_draw_shoe(Vector2(-r * 0.85, -r * 0.6), Vector2(r * 0.45, r * 0.3))
-	_draw_shoe(Vector2(-r * 0.85, r * 0.3), Vector2(r * 0.45, r * 0.3))
+func update_seg_type(new_type: String) -> void:
+	set_meta("seg_type", new_type)
+	if not _sprite:
+		return
+	match new_type:
+		"head":
+			_apply_texture(_head_vertical_tex)
+		"tail":
+			_apply_texture(_body_tex)
+			if not _leg_left:
+				_add_legs(true)
+			else:
+				_reposition_legs(true)
+		_:
+			_apply_texture(_body_tex)
+			if not _leg_left:
+				_add_legs(false)
+			else:
+				_reposition_legs(false)
 
-# ── BODY ──────────────────────────────────────────────────────────────────────
-func _draw_body() -> void:
-	var seg_idx: int = get_meta("seg_index", 1)
-	var r := S * 0.72
+func _add_legs(is_tail: bool) -> void:
+	var leg_offset_x := CELL * 0.3 if is_tail else 0.0
+	var leg_s := (CELL * 0.35) / maxf(float(_leg_tex.get_width()), float(_leg_tex.get_height()))
+	_leg_left = Sprite2D.new()
+	_leg_left.texture = _leg_tex
+	_leg_left.scale = Vector2(leg_s, leg_s)
+	_leg_left.position = Vector2(-leg_offset_x, -CELL * 0.5)
+	_leg_left.z_index = -1
+	add_child(_leg_left)
+	_leg_right = Sprite2D.new()
+	_leg_right.texture = _leg_tex
+	_leg_right.scale = Vector2(leg_s, leg_s)
+	_leg_right.position = Vector2(-leg_offset_x, CELL * 0.5)
+	_leg_right.z_index = -1
+	add_child(_leg_right)
+	_leg_phase = float(get_meta("seg_index", 0)) * 0.5 * PI
 
-	# Drop shadow
-	draw_circle(SHADOW, r, SHADOW_COL)
+func _reposition_legs(is_tail: bool) -> void:
+	var leg_offset_x := CELL * 0.3 if is_tail else 0.0
+	if _leg_left:
+		_leg_left.position = Vector2(-leg_offset_x, -CELL * 0.5)
+	if _leg_right:
+		_leg_right.position = Vector2(-leg_offset_x, CELL * 0.5)
 
-	# Base sphere
-	draw_circle(Vector2.ZERO, r, GREEN_BASE)
-
-	# Bottom shading
-	draw_circle(Vector2(0, r * 0.2), r * 0.7, GREEN_DARK)
-
-	# Top light dome
-	draw_circle(Vector2(-r * 0.12, -r * 0.2), r * 0.52, GREEN_LIGHT)
-
-	# Specular
-	draw_circle(Vector2(-r * 0.2, -r * 0.3), r * 0.18, Color(1, 1, 1, 0.25))
-
-	# Belly stripe (lighter band across center)
-	draw_circle(Vector2(0, 0), r * 0.35, GREEN_BELLY)
-
-	# Decorative spots (alternate pattern per segment)
-	if seg_idx % 2 == 0:
-		for sy in [-1.0, 1.0]:
-			draw_circle(Vector2(0, sy * r * 0.35), r * 0.12, YELLOW_SPOT)
-	else:
-		draw_circle(Vector2(r * 0.2, 0), r * 0.1, YELLOW_SPOT)
-		draw_circle(Vector2(-r * 0.2, 0), r * 0.1, YELLOW_SPOT)
-
-	# Subtle segment line (ring around the sphere)
-	draw_arc(Vector2.ZERO, r * 0.95, 0, TAU, 24, Color(0, 0, 0, 0.08), 1.5, true)
-
-	# Shoes
-	_draw_shoe(Vector2(-r * 0.8, -r * 0.55), Vector2(r * 0.4, r * 0.28))
-	_draw_shoe(Vector2(-r * 0.8, r * 0.28), Vector2(r * 0.4, r * 0.28))
-
-# ── TAIL ──────────────────────────────────────────────────────────────────────
-func _draw_tail() -> void:
-	var r := S * 0.6
-
-	# Drop shadow
-	draw_circle(SHADOW * 0.8, r, SHADOW_COL)
-
-	# Tapered sphere base
-	draw_circle(Vector2.ZERO, r, GREEN_BASE)
-	draw_circle(Vector2(0, r * 0.15), r * 0.65, GREEN_DARK)
-	draw_circle(Vector2(-r * 0.1, -r * 0.18), r * 0.45, GREEN_LIGHT)
-	draw_circle(Vector2(-r * 0.18, -r * 0.28), r * 0.15, Color(1, 1, 1, 0.22))
-
-	# Tail tip (small pointed sphere trailing behind)
-	var tip_pos := Vector2(-r * 0.7, 0)
-	draw_circle(tip_pos + Vector2(1, 2), r * 0.3, SHADOW_COL)
-	draw_circle(tip_pos, r * 0.35, GREEN_BASE)
-	draw_circle(tip_pos + Vector2(-r * 0.05, -r * 0.08), r * 0.2, GREEN_LIGHT)
-
-	# Shoes (smaller)
-	_draw_shoe(Vector2(-r * 0.5, -r * 0.55), Vector2(r * 0.35, r * 0.25))
-	_draw_shoe(Vector2(-r * 0.5, r * 0.3), Vector2(r * 0.35, r * 0.25))
-
-# ── SHOE (pseudo-3D) ─────────────────────────────────────────────────────────
-func _draw_shoe(pos: Vector2, sz: Vector2) -> void:
-	var cr := sz.y * 0.3  # corner radius feel via layering
-	# Shadow
-	draw_rect(Rect2(pos.x + 2, pos.y + 2, sz.x, sz.y), Color(0, 0, 0, 0.2))
-	# Base
-	draw_rect(Rect2(pos.x, pos.y, sz.x, sz.y), SHOE_COL)
-	# Sole (dark bottom)
-	draw_rect(Rect2(pos.x, pos.y + sz.y - 3, sz.x, 3), SHOE_DARK)
-	# Top highlight
-	draw_rect(Rect2(pos.x + 2, pos.y + 1, sz.x * 0.55, 2), SHOE_SHINE)
-	# Tiny specular dot
-	draw_circle(Vector2(pos.x + sz.x * 0.3, pos.y + sz.y * 0.25), 1.5, Color(1, 1, 1, 0.4))
+func _remove_legs() -> void:
+	if _leg_left:
+		_leg_left.queue_free()
+		_leg_left = null
+	if _leg_right:
+		_leg_right.queue_free()
+		_leg_right = null

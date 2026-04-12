@@ -182,15 +182,19 @@ func load_level(idx: int) -> void:
 	leaves_left = 0
 	var rows: Array = LEVELS[current_level]
 
-	# Plain background – no texture tiles
+	# Tiled background pattern (scaled down for smaller tile repeat)
 	var maze_h: int = rows.size()
 	var maze_w: int = 0
 	for row in rows:
 		maze_w = max(maze_w, row.length())
-	var bg := ColorRect.new()
-	bg.color = Color(0.12, 0.22, 0.08)
+	var bg_tex := preload("res://assets/background_pattern.png")
+	var tile_scale := 0.5
+	var bg := TextureRect.new()
+	bg.texture = bg_tex
+	bg.stretch_mode = TextureRect.STRETCH_TILE
 	bg.position = Vector2.ZERO
-	bg.size = Vector2(maze_w * CELL, maze_h * CELL)
+	bg.size = Vector2(maze_w * CELL / tile_scale, maze_h * CELL / tile_scale)
+	bg.scale = Vector2(tile_scale, tile_scale)
 	maze_layer.add_child(bg)
 
 	# Pass 1: collect wall positions
@@ -380,15 +384,21 @@ func _rebuild_caterpillar() -> void:
 	_update_rotations()
 	_update_taper()
 
-## Position segments with 10% overlap (each non-head segment shifts toward the one ahead).
+## Calculate cumulative positions: each segment placed spacing pixels from previous,
+## using its own grid-cell direction to handle corners correctly.
+func _calc_positions() -> Array[Vector2]:
+	var spacing := float(CELL) * 0.55
+	var positions: Array[Vector2] = []
+	positions.append(_pos(segment_cells[0]))
+	for i in range(1, segment_cells.size()):
+		var dir := Vector2(segment_cells[i] - segment_cells[i - 1]).normalized()
+		positions.append(positions[i - 1] + dir * spacing)
+	return positions
+
 func _update_positions() -> void:
-	var overlap := float(CELL) * 0.30
+	var positions := _calc_positions()
 	for i in segment_nodes.size():
-		var base_pos := _pos(segment_cells[i])
-		if i > 0:
-			var dir := segment_cells[i - 1] - segment_cells[i]
-			base_pos += Vector2(dir) * overlap
-		segment_nodes[i].position = base_pos
+		segment_nodes[i].position = positions[i]
 
 func _seg_type(i: int) -> String:
 	if i == 0:
@@ -402,17 +412,29 @@ func _update_rotations() -> void:
 		var dir: Vector2i
 		if i == 0:
 			dir = facing
+			segment_nodes[i].rotation = _dir_angle(dir)
 		else:
 			dir = segment_cells[i - 1] - segment_cells[i]
-		segment_nodes[i].rotation = _dir_angle(dir)
+			segment_nodes[i].rotation = _dir_angle(dir)
 
 func _update_taper() -> void:
 	var n := segment_nodes.size()
 	for i in n:
-		var t := 1.0
-		if n > 1:
-			t = 1.0 - 0.2 * float(i) / float(n - 1)
-		segment_nodes[i].scale = Vector2(t, t)
+		var s := 1.0
+		if i == 0:
+			s = 1.0  # head: full size
+		elif i == 1:
+			s = 0.85  # first body piece: slightly smaller
+		elif i == n - 1:
+			s = 0.7  # tail: smallest
+		else:
+			# Body pieces ramp up over 3 steps then stay large
+			var body_i := i - 2  # 0-based index in mid-body
+			if body_i < 3:
+				s = 0.95 + 0.05 * float(body_i)  # 0.95, 1.0, 1.05
+			else:
+				s = 1.1
+		segment_nodes[i].scale = Vector2(s, s)
 
 func _dir_angle(dir: Vector2i) -> float:
 	if dir == Vector2i.RIGHT: return 0.0
@@ -486,14 +508,10 @@ func _move_to(target: Vector2i) -> void:
 
 	# Animate segments (non-blocking) – use overlap-adjusted positions
 	var anim_dur := 0.11
-	var overlap := float(CELL) * 0.30
+	var target_positions := _calc_positions()
 	for i in segment_nodes.size():
-		var target_pos := _pos(segment_cells[i])
-		if i > 0:
-			var dir := segment_cells[i - 1] - segment_cells[i]
-			target_pos += Vector2(dir) * overlap
 		var tw := create_tween()
-		tw.tween_property(segment_nodes[i], "position", target_pos, anim_dur) \
+		tw.tween_property(segment_nodes[i], "position", target_positions[i], anim_dur) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	# Animate camera
 	var ctw := create_tween()
@@ -509,18 +527,15 @@ func _move_to(target: Vector2i) -> void:
 		segment_cells.append(new_cell)
 		var node := Node2D.new()
 		node.set_script(SegmentScript)
-		var new_pos := _pos(new_cell)
-		var dir_to_prev := segment_cells[segment_cells.size() - 2] - new_cell
-		new_pos += Vector2(dir_to_prev) * float(CELL) * 0.30
-		node.position = new_pos
+		var tail_positions := _calc_positions()
+		node.position = tail_positions[-1]
 		node.set_meta("seg_type", "tail")
 		node.set_meta("seg_index", segment_cells.size() - 1)
 		node.z_index = 0
 		cat_layer.add_child(node)
 		segment_nodes.append(node)
 		if segment_nodes.size() > 2:
-			segment_nodes[-2].set_meta("seg_type", "body")
-			segment_nodes[-2].queue_redraw()
+			segment_nodes[-2].update_seg_type("body")
 		# Refresh z_index so head stays on top
 		for zi in segment_nodes.size():
 			segment_nodes[zi].z_index = segment_nodes.size() - zi
@@ -528,6 +543,7 @@ func _move_to(target: Vector2i) -> void:
 	_update_rotations()
 	_update_taper()
 	for n in segment_nodes:
+		n.wiggle_legs()
 		n.queue_redraw()
 
 	# Check hazard
