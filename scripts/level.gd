@@ -144,7 +144,7 @@ var leaves_left: int = 0
 var is_busy: bool = false
 var swipe_start := Vector2.ZERO
 var move_timer: float = 0.0
-const MOVE_REPEAT_DELAY := 0.13
+const MOVE_REPEAT_DELAY := 0.15
 
 @onready var cam: Camera2D = $Camera2D
 @onready var maze_layer: Node2D = $MazeLayer
@@ -187,8 +187,8 @@ func load_level(idx: int) -> void:
 	var maze_w: int = 0
 	for row in rows:
 		maze_w = max(maze_w, row.length())
-	var bg_tex := preload("res://assets/background_pattern.png")
-	var tile_scale := 0.5
+	var bg_tex := preload("res://assets/background_sand.png")
+	var tile_scale := 0.25
 	var bg := TextureRect.new()
 	bg.texture = bg_tex
 	bg.stretch_mode = TextureRect.STRETCH_TILE
@@ -412,10 +412,11 @@ func _update_rotations() -> void:
 		var dir: Vector2i
 		if i == 0:
 			dir = facing
-			segment_nodes[i].rotation = _dir_angle(dir)
 		else:
 			dir = segment_cells[i - 1] - segment_cells[i]
-			segment_nodes[i].rotation = _dir_angle(dir)
+		segment_nodes[i].rotation = _dir_angle(dir)
+		var is_horizontal := (dir == Vector2i.LEFT or dir == Vector2i.RIGHT)
+		segment_nodes[i].update_direction(is_horizontal)
 
 func _update_taper() -> void:
 	var n := segment_nodes.size()
@@ -489,6 +490,11 @@ func _process(delta: float) -> void:
 func _try_move(dir: Vector2i) -> void:
 	if is_busy:
 		return
+	# Detect reverse direction (opposite of current facing) — move backwards slowly
+	var reverse_dir := -facing
+	if dir == reverse_dir:
+		_move_backward()
+		return
 	facing = dir
 	var target := segment_cells[0] + dir
 	if wall_set.has(target):
@@ -499,6 +505,84 @@ func _try_move(dir: Vector2i) -> void:
 		return
 	_move_to(target)
 
+func _move_backward() -> void:
+	is_busy = true
+	# Move backwards — every segment shifts one cell away from the head
+	var prev := segment_cells.duplicate()
+	# Last segment moves to the cell beyond it (away from head)
+	var tail_dir: Vector2i
+	if prev.size() > 1:
+		tail_dir = prev[-1] - prev[-2]
+	else:
+		tail_dir = -facing
+	var new_tail: Vector2i = prev[-1] + tail_dir
+	# Check wall for the new tail position
+	if wall_set.has(new_tail):
+		is_busy = false
+		_bump()
+		return
+	# Shift each segment to the next one's old position (away from head)
+	for i in range(0, segment_cells.size() - 1):
+		segment_cells[i] = prev[i + 1]
+	segment_cells[-1] = new_tail
+
+	# Slower animation for reversing — stagger from tail first
+	var anim_dur := 0.3
+	var seg_delay := 0.01
+	var target_positions := _calc_positions()
+	var seg_count := segment_nodes.size()
+	for i in seg_count:
+		var tw := create_tween()
+		var delay := seg_delay * float(seg_count - 1 - i)  # tail starts first
+		tw.tween_property(segment_nodes[i], "position", target_positions[i], anim_dur) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT).set_delay(delay)
+	# Animate camera — follow the head
+	var ctw := create_tween()
+	ctw.tween_property(cam, "position", _pos(segment_cells[0]), anim_dur) \
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+	# Collect leaf
+	# Check for leaf/hazard at new head position
+	var head_cell := segment_cells[0]
+	if leaves.has(head_cell):
+		leaves[head_cell].queue_free()
+		leaves.erase(head_cell)
+		leaves_left -= 1
+		var extra_cell: Vector2i = new_tail + tail_dir
+		segment_cells.append(extra_cell)
+		var node := Node2D.new()
+		node.set_script(SegmentScript)
+		var tail_positions := _calc_positions()
+		node.position = tail_positions[-1]
+		node.set_meta("seg_type", "tail")
+		node.set_meta("seg_index", segment_cells.size() - 1)
+		node.z_index = 0
+		cat_layer.add_child(node)
+		segment_nodes.append(node)
+		if segment_nodes.size() > 2:
+			segment_nodes[-2].update_seg_type("body")
+		for zi in segment_nodes.size():
+			segment_nodes[zi].z_index = segment_nodes.size() - zi
+
+	_update_rotations()
+	_update_taper()
+	for n in segment_nodes:
+		n.wiggle_legs()
+		n.queue_redraw()
+
+	if hazards.has(head_cell):
+		await _lose()
+		return
+	if leaves_left <= 0 and exit_node:
+		exit_node.set_meta("open", true)
+	if head_cell == exit_cell and leaves_left <= 0:
+		await _win()
+		return
+
+	_update_hud()
+	await get_tree().create_timer(anim_dur + seg_delay * seg_count).timeout
+	is_busy = false
+
 func _move_to(target: Vector2i) -> void:
 	is_busy = true
 	var prev := segment_cells.duplicate()
@@ -506,17 +590,19 @@ func _move_to(target: Vector2i) -> void:
 	for i in range(1, segment_cells.size()):
 		segment_cells[i] = prev[i - 1]
 
-	# Animate segments (non-blocking) – use overlap-adjusted positions
-	var anim_dur := 0.11
+	# Animate segments smoothly with tiny stagger for crawl feel
+	var anim_dur := 0.15
+	var seg_delay := 0.01
 	var target_positions := _calc_positions()
 	for i in segment_nodes.size():
+		var delay := seg_delay * float(i)
 		var tw := create_tween()
 		tw.tween_property(segment_nodes[i], "position", target_positions[i], anim_dur) \
-			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT).set_delay(delay)
 	# Animate camera
 	var ctw := create_tween()
 	ctw.tween_property(cam, "position", _pos(target), anim_dur) \
-		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 	# Collect leaf
 	if leaves.has(target):
@@ -561,7 +647,7 @@ func _move_to(target: Vector2i) -> void:
 		return
 
 	_update_hud()
-	is_busy = false  # release immediately — no await
+	is_busy = false
 
 func _bump() -> void:
 	if segment_nodes.is_empty():

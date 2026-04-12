@@ -12,6 +12,7 @@ var _body_tex: Texture2D = preload("res://assets/caterpillar/Caterpillar_vertica
 var _tail_tex: Texture2D = preload("res://assets/caterpillar/caterpillar_vertical_last.png")
 
 var _sprite: Sprite2D
+var _inner_shadow: Sprite2D
 var _leg_left: Sprite2D
 var _leg_right: Sprite2D
 var _leg_tex: Texture2D = preload("res://assets/caterpillar/leg.png")
@@ -37,7 +38,27 @@ func _ready() -> void:
 	var s: float = fit / maxf(tex_w, tex_h)
 	_sprite.scale = Vector2(s, s)
 
+	# Drop shadow behind the sprite
+	var shadow := Sprite2D.new()
+	shadow.texture = _sprite.texture
+	shadow.rotation = _sprite.rotation
+	shadow.scale = Vector2(s * 1.08, s * 1.08)
+	shadow.modulate = Color(0, 0, 0, 0.35)
+	shadow.position = Vector2(2, 3)
+	shadow.z_index = -2
+	add_child(shadow)
+
 	add_child(_sprite)
+
+	# Inner shadow for pseudo-3D effect (hidden by default, shown when horizontal)
+	_inner_shadow = Sprite2D.new()
+	_inner_shadow.texture = _sprite.texture
+	_inner_shadow.rotation = _sprite.rotation
+	_inner_shadow.scale = Vector2(s * 0.95, s * 0.5)
+	_inner_shadow.modulate = Color(0, 0, 0, 0.25)
+	_inner_shadow.position = Vector2(0, CELL * 0.15)
+	_inner_shadow.visible = false
+	add_child(_inner_shadow)
 
 	# Add legs to body and tail segments
 	if seg_type == "body" or seg_type == "tail":
@@ -60,18 +81,27 @@ func _ready() -> void:
 		# Offset phase by segment index for varied motion
 		_leg_phase = float(get_meta("seg_index", 0)) * 0.5 * PI
 
+func update_direction(is_horizontal: bool) -> void:
+	# Hide top leg and show inner shadow when moving horizontally
+	if _leg_left:
+		_leg_left.visible = not is_horizontal
+	if _inner_shadow:
+		_inner_shadow.visible = is_horizontal
+
 func wiggle_legs() -> void:
 	if not _leg_left or not _leg_right:
 		return
 	_leg_phase += 1.0
-	var angle := deg_to_rad(25.0)
-	var target_l := angle if fmod(_leg_phase, 2.0) < 1.0 else -angle
-	var target_r := -target_l
-	var dur := 0.12
-	var tw_l := create_tween()
-	tw_l.tween_property(_leg_left, "rotation", target_l, dur)
-	var tw_r := create_tween()
-	tw_r.tween_property(_leg_right, "rotation", target_r, dur)
+	var angle := deg_to_rad(30.0)
+	var dir := 1.0 if fmod(_leg_phase, 2.0) < 1.0 else -1.0
+	_leg_left.rotation = dir * angle
+	_leg_right.rotation = -dir * angle
+	# Subtle perpendicular bob on the sprite
+	if _sprite:
+		var bob := 2.0 * dir
+		var tw := create_tween()
+		tw.tween_property(_sprite, "position:y", bob, 0.1)
+		tw.tween_property(_sprite, "position:y", 0.0, 0.1)
 
 func _apply_texture(tex: Texture2D) -> void:
 	_sprite.texture = tex
