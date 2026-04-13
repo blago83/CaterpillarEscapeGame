@@ -1,12 +1,12 @@
 extends Node3D
-## 3D Caterpillar segment – sphere-based rendering with eyes and legs.
+## 3D Caterpillar segment – cartoon style with big eyes and red shoes.
 
 const CELL := 1.0
 
 var _mesh: MeshInstance3D
 var _mat: StandardMaterial3D
-var _leg_left: Node3D
-var _leg_right: Node3D
+var _shoe_left: MeshInstance3D
+var _shoe_right: MeshInstance3D
 var _leg_phase := 0.0
 var _base_mesh_y := 0.35
 
@@ -19,18 +19,20 @@ func _ready() -> void:
 	var radius: float
 	match seg_type:
 		"head":
-			radius = 0.3
-			_mat.albedo_color = Color(0.3, 0.8, 0.2)
+			radius = 0.35
+			_mat.albedo_color = Color(0.45, 0.82, 0.22)
 		"tail":
-			radius = 0.18
-			_mat.albedo_color = Color(0.35, 0.65, 0.25)
+			radius = 0.2
+			_mat.albedo_color = Color(0.40, 0.72, 0.20)
 		_:
-			radius = 0.25
-			_mat.albedo_color = Color(0.25, 0.72, 0.15)
+			radius = 0.28
+			_mat.albedo_color = Color(0.42, 0.78, 0.18)
 
 	var sphere := SphereMesh.new()
 	sphere.radius = radius
 	sphere.height = radius * 2.0
+	sphere.radial_segments = 24
+	sphere.rings = 12
 	_mesh.mesh = sphere
 	_mesh.material_override = _mat
 	_mesh.position.y = radius
@@ -40,8 +42,10 @@ func _ready() -> void:
 
 	if seg_type == "head":
 		_add_eyes(radius)
-	elif seg_type == "body" or seg_type == "tail":
-		_add_legs(seg_type == "tail")
+		_add_mouth(radius)
+		_add_shoes(radius, true)
+	else:
+		_add_shoes(radius, seg_type == "tail")
 
 func _add_eyes(head_radius: float) -> void:
 	var eye_white_mat := StandardMaterial3D.new()
@@ -50,78 +54,100 @@ func _add_eyes(head_radius: float) -> void:
 	pupil_mat.albedo_color = Color(0.05, 0.05, 0.05)
 
 	for side in [-1.0, 1.0]:
+		# Big white eye
 		var eye := MeshInstance3D.new()
 		var eye_s := SphereMesh.new()
-		eye_s.radius = 0.07
-		eye_s.height = 0.14
+		eye_s.radius = 0.11
+		eye_s.height = 0.22
 		eye.mesh = eye_s
 		eye.material_override = eye_white_mat
-		eye.position = Vector3(side * 0.12, head_radius * 0.3, -head_radius * 0.75)
+		eye.position = Vector3(side * 0.14, head_radius * 0.5, -head_radius * 0.7)
 		_mesh.add_child(eye)
 
+		# Big black pupil
 		var pupil := MeshInstance3D.new()
 		var pupil_s := SphereMesh.new()
-		pupil_s.radius = 0.04
-		pupil_s.height = 0.08
+		pupil_s.radius = 0.06
+		pupil_s.height = 0.12
 		pupil.mesh = pupil_s
 		pupil.material_override = pupil_mat
-		pupil.position = Vector3(0, 0, -0.05)
+		pupil.position = Vector3(side * 0.02, 0.0, -0.06)
 		eye.add_child(pupil)
 
-func _add_legs(is_tail: bool) -> void:
-	var leg_mat := StandardMaterial3D.new()
-	leg_mat.albedo_color = Color(0.2, 0.55, 0.1)
+		# Tiny white highlight dot
+		var highlight := MeshInstance3D.new()
+		var hl_s := SphereMesh.new()
+		hl_s.radius = 0.02
+		hl_s.height = 0.04
+		highlight.mesh = hl_s
+		highlight.material_override = eye_white_mat
+		highlight.position = Vector3(-0.02, 0.03, -0.04)
+		pupil.add_child(highlight)
 
-	var leg_len := 0.25
-	var leg_radius := 0.035
-	var y_pos := 0.08
-	var z_offset := 0.1 if is_tail else 0.0
+func _add_mouth(head_radius: float) -> void:
+	# Simple smiling mouth – a small dark torus-like shape using a flattened sphere
+	var mouth_mat := StandardMaterial3D.new()
+	mouth_mat.albedo_color = Color(0.15, 0.08, 0.05)
+	var mouth := MeshInstance3D.new()
+	var mouth_s := SphereMesh.new()
+	mouth_s.radius = 0.08
+	mouth_s.height = 0.04
+	mouth.mesh = mouth_s
+	mouth.material_override = mouth_mat
+	mouth.position = Vector3(0.0, -head_radius * 0.15, -head_radius * 0.9)
+	mouth.scale = Vector3(1.2, 0.5, 0.5)
+	_mesh.add_child(mouth)
 
-	# Left leg
-	_leg_left = Node3D.new()
-	_leg_left.position = Vector3(-0.25, y_pos, z_offset)
-	var left_mesh := MeshInstance3D.new()
-	var left_cyl := CylinderMesh.new()
-	left_cyl.top_radius = leg_radius
-	left_cyl.bottom_radius = leg_radius * 1.3
-	left_cyl.height = leg_len
-	left_mesh.mesh = left_cyl
-	left_mesh.material_override = leg_mat
-	left_mesh.rotation.z = PI / 2.0
-	left_mesh.position.x = -leg_len * 0.5
-	left_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_leg_left.add_child(left_mesh)
-	add_child(_leg_left)
+func _add_shoes(seg_radius: float, is_small: bool) -> void:
+	var shoe_mat := StandardMaterial3D.new()
+	shoe_mat.albedo_color = Color(0.85, 0.15, 0.1)  # Red shoes
+	var sole_mat := StandardMaterial3D.new()
+	sole_mat.albedo_color = Color(0.95, 0.85, 0.5)  # Yellow-ish sole
 
-	# Right leg
-	_leg_right = Node3D.new()
-	_leg_right.position = Vector3(0.25, y_pos, z_offset)
-	var right_mesh := MeshInstance3D.new()
-	var right_cyl := CylinderMesh.new()
-	right_cyl.top_radius = leg_radius
-	right_cyl.bottom_radius = leg_radius * 1.3
-	right_cyl.height = leg_len
-	right_mesh.mesh = right_cyl
-	right_mesh.material_override = leg_mat
-	right_mesh.rotation.z = PI / 2.0
-	right_mesh.position.x = leg_len * 0.5
-	right_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_leg_right.add_child(right_mesh)
-	add_child(_leg_right)
+	var shoe_w := 0.08 if is_small else 0.1
+	var shoe_h := 0.08
+	var shoe_d := 0.14 if is_small else 0.16
+	var spread := seg_radius * 0.9
+
+	for side_data in [[-1.0, "_shoe_left"], [1.0, "_shoe_right"]]:
+		var side: float = side_data[0]
+		var shoe := MeshInstance3D.new()
+		var shoe_box := BoxMesh.new()
+		shoe_box.size = Vector3(shoe_w, shoe_h, shoe_d)
+		shoe.mesh = shoe_box
+		shoe.material_override = shoe_mat
+		shoe.position = Vector3(side * spread, -seg_radius + shoe_h * 0.5 + 0.01, -0.02)
+		shoe.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_mesh.add_child(shoe)
+
+		# Sole (bottom)
+		var sole := MeshInstance3D.new()
+		var sole_box := BoxMesh.new()
+		sole_box.size = Vector3(shoe_w * 1.1, 0.02, shoe_d * 1.15)
+		sole.mesh = sole_box
+		sole.material_override = sole_mat
+		sole.position = Vector3(0, -shoe_h * 0.5, 0.01)
+		sole.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		shoe.add_child(sole)
+
+		if side < 0:
+			_shoe_left = shoe
+		else:
+			_shoe_right = shoe
 
 	_leg_phase = float(get_meta("seg_index", 0)) * 0.5 * PI
 
 func wiggle_legs() -> void:
-	if not _leg_left or not _leg_right:
+	if not _shoe_left or not _shoe_right:
 		return
 	_leg_phase += 1.0
-	var angle := deg_to_rad(25.0)
 	var dir := 1.0 if fmod(_leg_phase, 2.0) < 1.0 else -1.0
-	_leg_left.rotation.y = dir * angle
-	_leg_right.rotation.y = -dir * angle
-	# Subtle bob - direct set
+	# Shoes swing forward/back
+	_shoe_left.position.z = -0.02 + dir * 0.04
+	_shoe_right.position.z = -0.02 - dir * 0.04
+	# Subtle bob
 	if _mesh:
-		_mesh.position.y = _base_mesh_y + 0.03 * dir
+		_mesh.position.y = _base_mesh_y + 0.02 * dir
 
 func update_direction(_is_horizontal: bool) -> void:
 	pass  # 3D lighting handles depth naturally
@@ -135,28 +161,23 @@ func update_seg_type(new_type: String) -> void:
 		return
 	match new_type:
 		"head":
-			sphere.radius = 0.3
-			sphere.height = 0.6
-			_mat.albedo_color = Color(0.3, 0.8, 0.2)
-			_base_mesh_y = 0.3
-			_mesh.position.y = 0.3
-			_remove_legs()
+			sphere.radius = 0.35
+			sphere.height = 0.7
+			_mat.albedo_color = Color(0.45, 0.82, 0.22)
+			_base_mesh_y = 0.35
+			_mesh.position.y = 0.35
 		"tail":
-			sphere.radius = 0.18
-			sphere.height = 0.36
-			_mat.albedo_color = Color(0.35, 0.65, 0.25)
-			_base_mesh_y = 0.18
-			_mesh.position.y = 0.18
-			if not _leg_left:
-				_add_legs(true)
+			sphere.radius = 0.2
+			sphere.height = 0.4
+			_mat.albedo_color = Color(0.40, 0.72, 0.20)
+			_base_mesh_y = 0.2
+			_mesh.position.y = 0.2
 		_:
-			sphere.radius = 0.25
-			sphere.height = 0.5
-			_mat.albedo_color = Color(0.25, 0.72, 0.15)
-			_base_mesh_y = 0.25
-			_mesh.position.y = 0.25
-			if not _leg_left:
-				_add_legs(false)
+			sphere.radius = 0.28
+			sphere.height = 0.56
+			_mat.albedo_color = Color(0.42, 0.78, 0.18)
+			_base_mesh_y = 0.28
+			_mesh.position.y = 0.28
 
 func flash_red() -> void:
 	if _mat:
@@ -164,11 +185,3 @@ func flash_red() -> void:
 
 func set_head_direction(_vertical: bool) -> void:
 	pass
-
-func _remove_legs() -> void:
-	if _leg_left:
-		_leg_left.queue_free()
-		_leg_left = null
-	if _leg_right:
-		_leg_right.queue_free()
-		_leg_right = null
