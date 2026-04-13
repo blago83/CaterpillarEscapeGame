@@ -133,7 +133,6 @@ var segment_cells: Array[Vector2i] = []
 var segment_nodes: Array[Node3D] = []
 var _segment_targets: Array[Vector3] = []
 var _segment_target_rots: Array[float] = []
-var _move_progress: float = 1.0
 var leaves: Dictionary = {}
 var hazards: Dictionary = {}
 var exit_cell: Vector2i = Vector2i.ZERO
@@ -143,6 +142,8 @@ var is_busy: bool = false
 var swipe_start := Vector2.ZERO
 var move_timer: float = 0.0
 const MOVE_REPEAT_DELAY := 0.15
+const REVERSE_REPEAT_DELAY := 0.3
+var _is_reversing: bool = false
 
 var _maze_w: int = 0
 var _maze_h: int = 0
@@ -370,7 +371,6 @@ func _rebuild_caterpillar() -> void:
 	_segment_targets = _calc_positions()
 	_update_rotations_instant()
 	_segment_target_rots = _calc_target_rotations()
-	_move_progress = 1.0
 	_update_taper()
 
 func _calc_positions() -> Array[Vector3]:
@@ -506,24 +506,26 @@ func _process(delta: float) -> void:
 	# Smooth camera follow
 	cam.position = cam.position.lerp(_cam_target, minf(delta * 12.0, 1.0))
 
-	# Smooth segment interpolation with staggered follow
-	_move_progress = minf(_move_progress + delta * 8.0, 1.0)
+	# Smooth segment interpolation
+	var lerp_speed: float
+	if _is_reversing:
+		lerp_speed = minf(delta * 8.0, 1.0)
+	else:
+		lerp_speed = minf(delta * 14.0, 1.0)
 	for i in segment_nodes.size():
-		# Stagger: each segment is slightly behind the previous one
-		var seg_t := clampf(_move_progress - float(i) * 0.08, 0.0, 1.0)
-		var smooth_t := seg_t * seg_t * (3.0 - 2.0 * seg_t)  # smoothstep
 		if i < _segment_targets.size():
-			segment_nodes[i].position = segment_nodes[i].position.lerp(_segment_targets[i], minf(smooth_t * 0.5 + delta * 10.0, 1.0))
+			segment_nodes[i].position = segment_nodes[i].position.lerp(_segment_targets[i], lerp_speed)
 		if i < _segment_target_rots.size():
-			segment_nodes[i].rotation.y = lerp_angle(segment_nodes[i].rotation.y, _segment_target_rots[i], minf(smooth_t * 0.5 + delta * 10.0, 1.0))
+			segment_nodes[i].rotation.y = lerp_angle(segment_nodes[i].rotation.y, _segment_target_rots[i], lerp_speed)
 
 	var dir := _get_held_dir()
 	if dir == Vector2i.ZERO:
 		move_timer = 0.0
 		return
+	var repeat_delay := REVERSE_REPEAT_DELAY if dir == -facing else MOVE_REPEAT_DELAY
 	move_timer += delta
-	if move_timer >= MOVE_REPEAT_DELAY:
-		move_timer -= MOVE_REPEAT_DELAY
+	if move_timer >= repeat_delay:
+		move_timer -= repeat_delay
 		_try_move(dir)
 
 # ── Movement ──
@@ -535,6 +537,7 @@ func _try_move(dir: Vector2i) -> void:
 	if dir == reverse_dir:
 		_move_backward()
 		return
+	_is_reversing = false
 	facing = dir
 	var target := segment_cells[0] + dir
 	if wall_set.has(target):
@@ -546,60 +549,93 @@ func _try_move(dir: Vector2i) -> void:
 	_move_to(target)
 
 func _move_backward() -> void:
+	_is_reversing = true
 	is_busy = true
 	_move_count += 1
-	var prev := segment_cells.duplicate()
+
+	# Tail leads: find a free cell adjacent to the tail to extend into
+	var n := segment_cells.size()
 	var tail_dir: Vector2i
-	if prev.size() > 1:
-		tail_dir = prev[-1] - prev[-2]
+	if n > 1:
+		tail_dir = segment_cells[n - 1] - segment_cells[n - 2]
 	else:
 		tail_dir = -facing
-	var new_tail: Vector2i = prev[-1] + tail_dir
-	if wall_set.has(new_tail):
+
+	# Try straight first, then perpendicular directions
+	var try_dirs: Array[Vector2i] = [tail_dir]
+	if tail_dir.x == 0:
+		try_dirs.append(Vector2i.LEFT)
+		try_dirs.append(Vector2i.RIGHT)
+	else:
+		try_dirs.append(Vector2i.UP)
+		try_dirs.append(Vector2i.DOWN)
+
+	var new_tail := Vector2i.ZERO
+	var found_tail := false
+	for d in try_dirs:
+		var candidate: Vector2i = segment_cells[n - 1] + d
+		if not wall_set.has(candidate) and not segment_cells.has(candidate):
+			new_tail = candidate
+			found_tail = true
+			break
+		# Also allow if it's the head cell (which will vacate)
+		if not wall_set.has(candidate) and candidate == segment_cells[0]:
+			new_tail = candidate
+			found_tail = true
+			break
+	if not found_tail:
 		is_busy = false
 		_bump()
 		return
-	for i in range(0, segment_cells.size() - 1):
+
+	# Slide every segment toward the tail: seg[i] = old seg[i+1], tail = new cell
+	var prev := segment_cells.duplicate()
+	for i in range(0, n - 1):
 		segment_cells[i] = prev[i + 1]
-	segment_cells[-1] = new_tail
+	segment_cells[n - 1] = new_tail
 
 	_segment_targets = _calc_positions()
 	_segment_target_rots = _calc_target_rotations()
-	_move_progress = 0.0
 	var head3 := _pos(segment_cells[0])
 	var cam_offset_z := CAM_HEIGHT * tan(deg_to_rad(25.0))
 	_cam_target = Vector3(head3.x, CAM_HEIGHT, head3.z + cam_offset_z)
 
-	# Check for leaf at new head position
-	var head_cell := segment_cells[0]
-	if leaves.has(head_cell):
-		leaves[head_cell].queue_free()
-		leaves.erase(head_cell)
+	# When reversing, the tail is the leading end — check it for pickups/hazards
+	var lead_cell := new_tail
+	if leaves.has(lead_cell):
+		leaves[lead_cell].queue_free()
+		leaves.erase(lead_cell)
 		leaves_left -= 1
-		var extra_cell: Vector2i = new_tail + tail_dir
-		segment_cells.append(extra_cell)
+		# Grow from the head side (opposite of travel direction)
+		var head_dir: Vector2i
+		if n > 1:
+			head_dir = prev[0] - prev[1]
+		else:
+			head_dir = facing
+		var extra_cell: Vector2i = segment_cells[0] + head_dir
+		segment_cells.insert(0, extra_cell)
 		var node := Node3D.new()
 		node.set_script(Segment3DScript)
-		var tail_positions := _calc_positions()
-		node.position = tail_positions[-1]
-		node.set_meta("seg_type", "tail")
-		node.set_meta("seg_index", segment_cells.size() - 1)
+		node.set_meta("seg_type", "body")
+		node.set_meta("seg_index", 0)
 		cat_layer.add_child(node)
-		segment_nodes.append(node)
-		if segment_nodes.size() > 2:
-			segment_nodes[-2].update_seg_type("body")
+		segment_nodes.insert(0, node)
+		var positions := _calc_positions()
+		node.position = positions[0]
+		segment_nodes[0].update_seg_type(_seg_type(0))
+		segment_nodes[1].update_seg_type(_seg_type(1))
 		_segment_targets = _calc_positions()
 		_segment_target_rots = _calc_target_rotations()
 	_update_taper()
-	for n in segment_nodes:
-		n.wiggle_legs()
+	for sn in segment_nodes:
+		sn.wiggle_legs()
 
-	if hazards.has(head_cell):
+	if hazards.has(lead_cell):
 		await _lose()
 		return
 	if leaves_left <= 0 and exit_node:
 		exit_node.set_meta("open", true)
-	if head_cell == exit_cell and leaves_left <= 0:
+	if lead_cell == exit_cell and leaves_left <= 0:
 		await _win()
 		return
 
@@ -616,7 +652,6 @@ func _move_to(target: Vector2i) -> void:
 
 	_segment_targets = _calc_positions()
 	_segment_target_rots = _calc_target_rotations()
-	_move_progress = 0.0
 	var tgt3 := _pos(target)
 	var cam_offset_z := CAM_HEIGHT * tan(deg_to_rad(25.0))
 	_cam_target = Vector3(tgt3.x, CAM_HEIGHT, tgt3.z + cam_offset_z)
