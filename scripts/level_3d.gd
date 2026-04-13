@@ -1,10 +1,12 @@
 extends Node3D
 
 const CELL := 1.0
-const WALL_HEIGHT := 0.8
+const WALL_HEIGHT := 0.7
 const CAM_HEIGHT := 20.0
 const GROUND_COLOR := Color(0.76, 0.70, 0.50)
-const WALL_COLOR := Color(0.55, 0.38, 0.22)
+const BUSH_COLOR := Color(0.22, 0.50, 0.15)
+const BUSH_DARK := Color(0.15, 0.35, 0.08)
+const TRUNK_COLOR := Color(0.35, 0.25, 0.12)
 
 const Segment3DScript := preload("res://scripts/segment_3d.gd")
 const Leaf3DScript := preload("res://scripts/leaf_3d.gd")
@@ -149,8 +151,12 @@ var _maze_w: int = 0
 var _maze_h: int = 0
 
 # Shared resources for performance
-var _wall_mat: StandardMaterial3D
+var _wall_mat: ShaderMaterial
 var _wall_mesh: BoxMesh
+var _trunk_mat: StandardMaterial3D
+var _trunk_mesh: BoxMesh
+var _leaf_mat: StandardMaterial3D
+var _leaf_mesh: SphereMesh
 var _ground_mat: StandardMaterial3D
 var _cam_target := Vector3.ZERO
 var _wall_cells: Array[Vector2i] = []
@@ -175,12 +181,83 @@ func _ready() -> void:
 	load_level(current_level)
 
 func _init_shared_resources() -> void:
-	_wall_mat = StandardMaterial3D.new()
-	_wall_mat.albedo_color = WALL_COLOR
+	# Bush body shader – noise-based green variation
+	var bush_shader := Shader.new()
+	bush_shader.code = "
+shader_type spatial;
+uniform vec3 color_light : source_color = vec3(0.28, 0.55, 0.18);
+uniform vec3 color_dark : source_color = vec3(0.12, 0.32, 0.06);
+uniform float scale : hint_range(1.0, 20.0) = 6.0;
+
+// Simple hash-based noise
+float hash(vec3 p) {
+    p = fract(p * vec3(443.897, 441.423, 437.195));
+    p += dot(p, p.yzx + 19.19);
+    return fract((p.x + p.y) * p.z);
+}
+
+float noise3d(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec3(1,0,0));
+    float c = hash(i + vec3(0,1,0));
+    float d = hash(i + vec3(1,1,0));
+    float e = hash(i + vec3(0,0,1));
+    float ff = hash(i + vec3(1,0,1));
+    float g = hash(i + vec3(0,1,1));
+    float h = hash(i + vec3(1,1,1));
+    return mix(mix(mix(a,b,f.x), mix(c,d,f.x), f.y), mix(mix(e,ff,f.x), mix(g,h,f.x), f.y), f.z);
+}
+
+void vertex() {
+    // Bulge outward at top to make rounded bush shape
+    float top_t = clamp((VERTEX.y + 0.35) / 0.7, 0.0, 1.0);
+    float bulge = sin(top_t * 3.14159) * 0.06;
+    VERTEX.xz *= 1.0 + bulge;
+}
+
+void fragment() {
+    vec3 world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+    float n = noise3d(world_pos * scale);
+    ALBEDO = mix(color_dark, color_light, n);
+    ROUGHNESS = 0.85;
+}
+"
+	_wall_mat = ShaderMaterial.new()
+	_wall_mat.shader = bush_shader
+	_wall_mat.set_shader_parameter("color_light", Vector3(BUSH_COLOR.r, BUSH_COLOR.g, BUSH_COLOR.b))
+	_wall_mat.set_shader_parameter("color_dark", Vector3(BUSH_DARK.r, BUSH_DARK.g, BUSH_DARK.b))
+	_wall_mat.set_shader_parameter("scale", 6.0)
+
 	_wall_mesh = BoxMesh.new()
-	_wall_mesh.size = Vector3(CELL * 0.95, WALL_HEIGHT, CELL * 0.95)
+	_wall_mesh.size = Vector3(CELL, WALL_HEIGHT, CELL)
+
+	# Trunk (dark brown base)
+	_trunk_mat = StandardMaterial3D.new()
+	_trunk_mat.albedo_color = TRUNK_COLOR
+	_trunk_mesh = BoxMesh.new()
+	_trunk_mesh.size = Vector3(CELL * 0.5, 0.15, CELL * 0.5)
+
+	# Leaf clusters – small spheres on top (simple opaque material)
+	_leaf_mat = StandardMaterial3D.new()
+	_leaf_mat.albedo_color = Color(0.3, 0.6, 0.15)
+	_leaf_mat.roughness = 0.9
+
+	_leaf_mesh = SphereMesh.new()
+	_leaf_mesh.radius = 0.12
+	_leaf_mesh.height = 0.16
+	_leaf_mesh.radial_segments = 6
+	_leaf_mesh.rings = 3
+
 	_ground_mat = StandardMaterial3D.new()
-	_ground_mat.albedo_color = GROUND_COLOR
+	_ground_mat.albedo_color = Color.WHITE
+	_ground_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var ground_tex := load("res://assets/background_pattern.png") as Texture2D
+	if ground_tex:
+		_ground_mat.albedo_texture = ground_tex
+		_ground_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 
 func _setup_lighting() -> void:
 	# Directional light with shadows
@@ -306,7 +383,12 @@ func _create_ground(w: int, h: int) -> void:
 	var mesh_inst := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(float(w) * CELL, float(h) * CELL)
+	plane.subdivide_width = 0
+	plane.subdivide_depth = 0
 	mesh_inst.mesh = plane
+	# Tile the texture uniformly (same scale on both axes)
+	var tiles := float(max(w, h)) / 4.05
+	_ground_mat.uv1_scale = Vector3(tiles, tiles, 1.0)
 	mesh_inst.material_override = _ground_mat
 	mesh_inst.position = Vector3(
 		(float(w) - 1.0) * CELL * 0.5,
@@ -318,6 +400,7 @@ func _create_ground(w: int, h: int) -> void:
 # ── Entity factories ──
 
 func _build_wall_multimesh() -> void:
+	# Bush body
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = _wall_mesh
@@ -332,6 +415,49 @@ func _build_wall_multimesh() -> void:
 	mm_inst.material_override = _wall_mat
 	mm_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	maze_layer.add_child(mm_inst)
+
+	# Trunk bases
+	var trunk_mm := MultiMesh.new()
+	trunk_mm.transform_format = MultiMesh.TRANSFORM_3D
+	trunk_mm.mesh = _trunk_mesh
+	trunk_mm.instance_count = _wall_cells.size()
+	for i in _wall_cells.size():
+		var p := _pos(_wall_cells[i])
+		var t := Transform3D.IDENTITY
+		t.origin = Vector3(p.x, 0.075, p.z)
+		trunk_mm.set_instance_transform(i, t)
+	var trunk_inst := MultiMeshInstance3D.new()
+	trunk_inst.multimesh = trunk_mm
+	trunk_inst.material_override = _trunk_mat
+	trunk_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	maze_layer.add_child(trunk_inst)
+
+	# Leaf clusters on top of bushes
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 42  # deterministic
+	var leaves_per_wall := 3
+	var total_leaves := _wall_cells.size() * leaves_per_wall
+	var leaf_mm := MultiMesh.new()
+	leaf_mm.transform_format = MultiMesh.TRANSFORM_3D
+	leaf_mm.mesh = _leaf_mesh
+	leaf_mm.instance_count = total_leaves
+	for i in _wall_cells.size():
+		var p := _pos(_wall_cells[i])
+		for j in leaves_per_wall:
+			var idx := i * leaves_per_wall + j
+			var offset_x := rng.randf_range(-0.35, 0.35)
+			var offset_z := rng.randf_range(-0.35, 0.35)
+			var offset_y := rng.randf_range(-0.05, 0.15)
+			var s := rng.randf_range(0.7, 1.4)
+			var t := Transform3D.IDENTITY
+			t = t.scaled(Vector3(s, s * 0.8, s))
+			t.origin = Vector3(p.x + offset_x, WALL_HEIGHT + offset_y, p.z + offset_z)
+			leaf_mm.set_instance_transform(idx, t)
+	var leaf_inst := MultiMeshInstance3D.new()
+	leaf_inst.multimesh = leaf_mm
+	leaf_inst.material_override = _leaf_mat
+	leaf_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	maze_layer.add_child(leaf_inst)
 
 func _make_leaf(cell: Vector2i) -> void:
 	var node := Node3D.new()
