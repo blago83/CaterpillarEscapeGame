@@ -7,7 +7,7 @@ const BUSH_TOP := Color(0.40, 0.62, 0.10)
 const BUSH_BOTTOM := Color(0.12, 0.35, 0.07)
 
 # Camera offset from the look-at target (gives that ~-52°, -32° perspective feel)
-const CAM_OFFSET := Vector3(-7.0, 9.0, 7.5)
+const CAM_OFFSET := Vector3(7.0, 9.0, 7.5)
 const CAM_FOV := 38.0
 
 const Segment3DScript := preload("res://scripts/segment_3d.gd")
