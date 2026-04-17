@@ -60,7 +60,7 @@ func _ready() -> void:
 		"head":
 			# Face pivot – tilted upward so features face the overhead camera
 			var face_pivot := Node3D.new()
-			face_pivot.rotation.x = deg_to_rad(-10)  # Gentle tilt toward camera
+			face_pivot.rotation.x = deg_to_rad(-55)  # Tilt face up toward overhead camera
 			_mesh.add_child(face_pivot)
 			_add_eyes(radius, face_pivot)
 			_add_cheeks(radius, face_pivot)

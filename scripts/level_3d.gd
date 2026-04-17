@@ -363,11 +363,11 @@ func load_level(idx: int) -> void:
 	cam.size = ORTHO_SIZE
 	cam.near = 0.1
 	cam.far = 100.0
-	cam.rotation_degrees = Vector3(-40, 0, 0)
+	cam.rotation_degrees = Vector3(-65, 0, 0)
 	# Compute camera Z bounds so the view stays within the maze
-	var cam_offset_z := CAM_HEIGHT / tan(deg_to_rad(40.0))
+	var cam_offset_z := CAM_HEIGHT / tan(deg_to_rad(65.0))
 	# Orthographic: visible Z range on ground = size / sin(tilt), symmetric top/bottom
-	var half_view_z := ORTHO_SIZE / (2.0 * sin(deg_to_rad(40.0)))
+	var half_view_z := ORTHO_SIZE / (2.0 * sin(deg_to_rad(65.0)))
 	var maze_z_top := -0.5 * CELL
 	var maze_z_bot := (float(_maze_h) - 0.5) * CELL
 	_cam_z_min = maze_z_top + cam_offset_z + half_view_z
@@ -894,7 +894,7 @@ func _move_backward() -> void:
 	_segment_targets = _calc_positions()
 	_segment_target_rots = _calc_target_rotations()
 	var head3 := _pos(segment_cells[0])
-	var cam_offset_z := CAM_HEIGHT / tan(deg_to_rad(40.0))
+	var cam_offset_z := CAM_HEIGHT / tan(deg_to_rad(65.0))
 	_cam_target = Vector3(head3.x, CAM_HEIGHT, clampf(head3.z + cam_offset_z, _cam_z_min, _cam_z_max))
 
 	# When reversing, the tail is the leading end — check it for pickups/hazards
@@ -950,7 +950,7 @@ func _move_to(target: Vector2i) -> void:
 	_segment_targets = _calc_positions()
 	_segment_target_rots = _calc_target_rotations()
 	var tgt3 := _pos(target)
-	var cam_offset_z := CAM_HEIGHT / tan(deg_to_rad(40.0))
+	var cam_offset_z := CAM_HEIGHT / tan(deg_to_rad(65.0))
 	_cam_target = Vector3(tgt3.x, CAM_HEIGHT, clampf(tgt3.z + cam_offset_z, _cam_z_min, _cam_z_max))
 
 	# Collect leaf
