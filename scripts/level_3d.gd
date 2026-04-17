@@ -363,7 +363,7 @@ func load_level(idx: int) -> void:
 	cam.size = ORTHO_SIZE
 	cam.near = 0.1
 	cam.far = 100.0
-	cam.rotation_degrees = Vector3(-65, 0, 0)
+	cam.rotation_degrees = Vector3(-65, 20, 0)
 	# Compute camera Z bounds so the view stays within the maze
 	var cam_offset_z := CAM_HEIGHT / tan(deg_to_rad(65.0))
 	# Orthographic: visible Z range on ground = size / sin(tilt), symmetric top/bottom
