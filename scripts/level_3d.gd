@@ -2,11 +2,13 @@ extends Node3D
 
 const CELL := 1.0
 const WALL_HEIGHT := 0.85
-const CAM_HEIGHT := 20.0
-const ORTHO_SIZE := 14.0
 const GROUND_COLOR := Color(0.76, 0.70, 0.50)
 const BUSH_TOP := Color(0.40, 0.62, 0.10)
 const BUSH_BOTTOM := Color(0.12, 0.35, 0.07)
+
+# Camera offset from the look-at target (gives that ~-52°, -32° perspective feel)
+const CAM_OFFSET := Vector3(-7.0, 9.0, 7.5)
+const CAM_FOV := 38.0
 
 const Segment3DScript := preload("res://scripts/segment_3d.gd")
 const Leaf3DScript := preload("res://scripts/leaf_3d.gd")
@@ -154,13 +156,12 @@ var _maze_h: int = 0
 var _wall_mat: ShaderMaterial
 var _wall_mesh: BoxMesh
 var _ground_mat: StandardMaterial3D
-var _cam_target := Vector3.ZERO
-var _cam_z_min := -1e9
-var _cam_z_max := 1e9
+var _cam_look_target := Vector3.ZERO
 var _wall_cells: Array[Vector2i] = []
 var _diag_timer := 0.0
 var _move_count := 0
 var _frame_count := 0
+var _p_was_pressed := false
 
 @onready var cam: Camera3D = $Camera3D
 @onready var maze_layer: Node3D = $MazeLayer
@@ -358,30 +359,25 @@ func load_level(idx: int) -> void:
 	# Scatter decorations outside the maze
 	_spawn_decorations()
 
-	# Camera setup – orthographic for uniform brightness across the screen
-	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-	cam.size = ORTHO_SIZE
+	# Camera setup – perspective with isometric-like offset
+	cam.projection = Camera3D.PROJECTION_PERSPECTIVE
+	cam.fov = CAM_FOV
 	cam.near = 0.1
 	cam.far = 100.0
-	cam.rotation_degrees = Vector3(-65, 0, 0)
-	# Compute camera Z bounds so the view stays within the maze
-	var cam_offset_z := CAM_HEIGHT / tan(deg_to_rad(65.0))
-	# Orthographic: visible Z range on ground = size / sin(tilt), symmetric top/bottom
-	var half_view_z := ORTHO_SIZE / (2.0 * sin(deg_to_rad(65.0)))
-	var maze_z_top := -0.5 * CELL
-	var maze_z_bot := (float(_maze_h) - 0.5) * CELL
-	_cam_z_min = maze_z_top + cam_offset_z + half_view_z
-	_cam_z_max = maze_z_bot + cam_offset_z - half_view_z
-	if _cam_z_min > _cam_z_max:
-		var mid := (_cam_z_min + _cam_z_max) * 0.5
-		_cam_z_min = mid
-		_cam_z_max = mid
+
+	# Compute maze center for initial camera placement
+	var maze_center := Vector3(
+		(float(_maze_w) - 1.0) * CELL * 0.5,
+		0.0,
+		(float(_maze_h) - 1.0) * CELL * 0.5
+	)
 
 	var head_pos := _pos(player_cell)
-	_cam_target = Vector3(head_pos.x, CAM_HEIGHT, clampf(head_pos.z + cam_offset_z, _cam_z_min, _cam_z_max))
-	cam.position = _cam_target
+	_cam_look_target = Vector3(head_pos.x, 0.8, head_pos.z)
+	cam.position = _cam_look_target + CAM_OFFSET
+	cam.look_at(_cam_look_target, Vector3.UP)
 	cam.current = true
-	print("Level loaded: %d walls, cam at %s, cam_rot=%s, projection=%d" % [wall_set.size(), cam.position, cam.rotation_degrees, cam.projection])
+	print("Level loaded: %d walls, cam at %s, cam_rot=%s, fov=%.0f" % [wall_set.size(), cam.position, cam.rotation_degrees, cam.fov])
 
 	# Caterpillar – determine initial facing (first open direction)
 	for d in [Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT]:
@@ -800,8 +796,64 @@ func _process(delta: float) -> void:
 			_diag_timer + 5.0, fps, node_count, obj_count, mem_static, mem_msg, vram, draw_calls, _move_count, segment_nodes.size(), cat_layer.get_child_count()])
 		_diag_timer = 0.0
 
-	# Smooth camera follow
-	cam.position = cam.position.lerp(_cam_target, minf(delta * 12.0, 1.0))
+	# ── Debug camera controls ──
+	# ROTATION:  Q/E = tilt (X), Z/C = yaw (Y), R/T = roll (Z)
+	# POSITION:  I/K = forward/back, J/L = left/right, U/O = up/down
+	# ZOOM:      N/M = zoom out/in (ortho size)
+	# PRINT:     P = print all camera values
+	# Hold Shift for finer control
+	var rot_speed := 30.0 * delta
+	var move_speed := 10.0 * delta
+	var zoom_speed := 5.0 * delta
+	if Input.is_key_pressed(KEY_SHIFT):
+		rot_speed *= 0.2
+		move_speed *= 0.2
+		zoom_speed *= 0.2
+	# Rotation
+	if Input.is_key_pressed(KEY_Q):
+		cam.rotation_degrees.x -= rot_speed
+	if Input.is_key_pressed(KEY_E):
+		cam.rotation_degrees.x += rot_speed
+	if Input.is_key_pressed(KEY_Z):
+		cam.rotation_degrees.y -= rot_speed
+	if Input.is_key_pressed(KEY_C):
+		cam.rotation_degrees.y += rot_speed
+	if Input.is_key_pressed(KEY_R):
+		cam.rotation_degrees.z -= rot_speed
+	if Input.is_key_pressed(KEY_T):
+		cam.rotation_degrees.z += rot_speed
+	# Position
+	if Input.is_key_pressed(KEY_J):
+		cam.position.x -= move_speed
+	if Input.is_key_pressed(KEY_L):
+		cam.position.x += move_speed
+	if Input.is_key_pressed(KEY_I):
+		cam.position.z -= move_speed
+	if Input.is_key_pressed(KEY_K):
+		cam.position.z += move_speed
+	if Input.is_key_pressed(KEY_U):
+		cam.position.y += move_speed
+	if Input.is_key_pressed(KEY_O):
+		cam.position.y -= move_speed
+	# Zoom (FOV)
+	if Input.is_key_pressed(KEY_N):
+		cam.fov = minf(cam.fov + zoom_speed * 5.0, 90.0)
+	if Input.is_key_pressed(KEY_M):
+		cam.fov = maxf(cam.fov - zoom_speed * 5.0, 10.0)
+	# Print
+	if Input.is_key_pressed(KEY_P):
+		if not _p_was_pressed:
+			print(">>> CAM rotation=%s  position=%s  fov=%.1f" % [cam.rotation_degrees, cam.position, cam.fov])
+		_p_was_pressed = true
+	else:
+		_p_was_pressed = false
+
+	# Smooth camera follow – lerp look target, recompute position + look_at
+	var new_look := _cam_look_target
+	var current_look := cam.position - CAM_OFFSET
+	current_look = current_look.lerp(new_look, minf(delta * 12.0, 1.0))
+	cam.position = current_look + CAM_OFFSET
+	cam.look_at(current_look, Vector3.UP)
 
 	# Smooth segment interpolation
 	var lerp_speed: float
@@ -894,8 +946,7 @@ func _move_backward() -> void:
 	_segment_targets = _calc_positions()
 	_segment_target_rots = _calc_target_rotations()
 	var head3 := _pos(segment_cells[0])
-	var cam_offset_z := CAM_HEIGHT / tan(deg_to_rad(65.0))
-	_cam_target = Vector3(head3.x, CAM_HEIGHT, clampf(head3.z + cam_offset_z, _cam_z_min, _cam_z_max))
+	_cam_look_target = Vector3(head3.x, 0.8, head3.z)
 
 	# When reversing, the tail is the leading end — check it for pickups/hazards
 	var lead_cell := new_tail
@@ -950,8 +1001,7 @@ func _move_to(target: Vector2i) -> void:
 	_segment_targets = _calc_positions()
 	_segment_target_rots = _calc_target_rotations()
 	var tgt3 := _pos(target)
-	var cam_offset_z := CAM_HEIGHT / tan(deg_to_rad(65.0))
-	_cam_target = Vector3(tgt3.x, CAM_HEIGHT, clampf(tgt3.z + cam_offset_z, _cam_z_min, _cam_z_max))
+	_cam_look_target = Vector3(tgt3.x, 0.8, tgt3.z)
 
 	# Collect leaf
 	if leaves.has(target):
