@@ -264,17 +264,24 @@ void fragment() {
 		_ground_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 
 func _setup_lighting() -> void:
-	# No directional light – bushes and ground are unshaded, so it only
-	# caused uneven brightness across the screen via shadow cascades.
+	# Directional light – slightly angled for soft shadows and depth
+	var light := DirectionalLight3D.new()
+	light.rotation_degrees = Vector3(-70, 30, 0)
+	light.shadow_enabled = true
+	light.light_energy = 0.8
+	light.light_color = Color(1.0, 0.98, 0.92)
+	light.directional_shadow_max_distance = 60.0
+	light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	add_child(light)
 
-	# World environment – ambient-only lighting for decorations & caterpillar
+	# World environment
 	var world_env := WorldEnvironment.new()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = Color(0.12, 0.18, 0.08)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.85, 0.85, 0.80)
-	env.ambient_light_energy = 1.0
+	env.ambient_light_color = Color(0.75, 0.75, 0.70)
+	env.ambient_light_energy = 0.6
 	world_env.environment = env
 	add_child(world_env)
 
@@ -465,7 +472,6 @@ func _make_flower(pos: Vector3) -> void:
 	stem_inst.mesh = stem_mesh
 	var stem_mat := StandardMaterial3D.new()
 	stem_mat.albedo_color = Color(0.2, 0.55, 0.15)
-	stem_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	stem_inst.material_override = stem_mat
 	stem_inst.position.y = 0.15
 	stem_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -479,7 +485,6 @@ func _make_flower(pos: Vector3) -> void:
 	var petal_mat := StandardMaterial3D.new()
 	var petal_colors := [Color(0.9, 0.2, 0.3), Color(0.95, 0.75, 0.2), Color(0.7, 0.3, 0.8), Color(1.0, 0.5, 0.6), Color(0.3, 0.55, 0.95)]
 	petal_mat.albedo_color = petal_colors[randi() % petal_colors.size()]
-	petal_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	petal_inst.material_override = petal_mat
 	petal_inst.position.y = 0.32
 	petal_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -492,7 +497,6 @@ func _make_flower(pos: Vector3) -> void:
 	center_inst.mesh = center_mesh
 	var center_mat := StandardMaterial3D.new()
 	center_mat.albedo_color = Color(0.95, 0.85, 0.2)
-	center_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	center_inst.material_override = center_mat
 	center_inst.position.y = 0.35
 	center_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -514,7 +518,6 @@ func _make_mushroom(pos: Vector3) -> void:
 	stem_inst.mesh = stem_mesh
 	var stem_mat := StandardMaterial3D.new()
 	stem_mat.albedo_color = Color(0.9, 0.88, 0.78)
-	stem_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	stem_inst.material_override = stem_mat
 	stem_inst.position.y = 0.09
 	stem_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -528,7 +531,6 @@ func _make_mushroom(pos: Vector3) -> void:
 	var cap_mat := StandardMaterial3D.new()
 	var cap_colors := [Color(0.8, 0.15, 0.12), Color(0.85, 0.55, 0.15), Color(0.6, 0.35, 0.2)]
 	cap_mat.albedo_color = cap_colors[randi() % cap_colors.size()]
-	cap_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	cap_inst.material_override = cap_mat
 	cap_inst.position.y = 0.2
 	cap_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -551,7 +553,7 @@ func _make_rock(pos: Vector3) -> void:
 	var rock_mat := StandardMaterial3D.new()
 	var grey := randf_range(0.35, 0.6)
 	rock_mat.albedo_color = Color(grey, grey * 0.95, grey * 0.9)
-	rock_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	rock_mat.roughness = 0.95
 	rock_inst.material_override = rock_mat
 	rock_inst.position.y = ry * 0.5
 	rock_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -567,7 +569,6 @@ func _make_grass_tuft(pos: Vector3) -> void:
 	var blade_count := randi_range(3, 6)
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(randf_range(0.25, 0.45), randf_range(0.55, 0.75), randf_range(0.1, 0.2))
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	for i in blade_count:
 		var blade := MeshInstance3D.new()
@@ -626,7 +627,7 @@ func _build_wall_multimesh() -> void:
 	var mm_inst := MultiMeshInstance3D.new()
 	mm_inst.multimesh = mm
 	mm_inst.material_override = _wall_mat
-	mm_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mm_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	maze_layer.add_child(mm_inst)
 
 func _make_leaf(cell: Vector2i) -> void:

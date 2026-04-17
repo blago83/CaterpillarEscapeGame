@@ -15,7 +15,6 @@ func _ready() -> void:
 	torus.outer_radius = 0.4
 	_ring.mesh = torus
 	_ring_mat = StandardMaterial3D.new()
-	_ring_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_ring_mat.albedo_color = Color(0.5, 0.35, 0.6)
 	_ring.material_override = _ring_mat
 	_ring.position.y = 0.05
@@ -30,7 +29,6 @@ func _ready() -> void:
 	cyl.height = 0.02
 	_glow.mesh = cyl
 	_glow_mat = StandardMaterial3D.new()
-	_glow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_glow_mat.albedo_color = Color(0.7, 0.5, 0.9, 0.5)
 	_glow_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_glow_mat.emission_enabled = true
