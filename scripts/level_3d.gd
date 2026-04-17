@@ -5,8 +5,8 @@ const WALL_HEIGHT := 0.85
 const CAM_HEIGHT := 20.0
 const ORTHO_SIZE := 14.0
 const GROUND_COLOR := Color(0.76, 0.70, 0.50)
-const BUSH_TOP := Color(0.55, 0.78, 0.15)
-const BUSH_BOTTOM := Color(0.18, 0.45, 0.10)
+const BUSH_TOP := Color(0.40, 0.62, 0.10)
+const BUSH_BOTTOM := Color(0.12, 0.35, 0.07)
 
 const Segment3DScript := preload("res://scripts/segment_3d.gd")
 const Leaf3DScript := preload("res://scripts/leaf_3d.gd")
@@ -385,15 +385,15 @@ func load_level(idx: int) -> void:
 	# segment_cells[0] = head (front), segment_cells[-1] = tail (back)
 	var init_path: Array[Vector2i] = [player_cell]
 	var walk := player_cell
-	for i in range(2):
+	for i in range(4):
 		var next := walk + facing
 		if not wall_set.has(next) and not init_path.has(next):
 			init_path.push_front(next)
 			walk = next
 		else:
 			break
-	# init_path is [head, ..., original_pos]. Pad to at least 3 segments.
-	while init_path.size() < 3:
+	# init_path is [head, body x3, tail]. Pad to at least 5 segments.
+	while init_path.size() < 5:
 		init_path.append(init_path[-1])
 	segment_cells = init_path
 	player_cell = segment_cells[0]
