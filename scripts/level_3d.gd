@@ -381,7 +381,7 @@ func load_level(idx: int) -> void:
 	_cam_target = Vector3(head_pos.x, CAM_HEIGHT, clampf(head_pos.z + cam_offset_z, _cam_z_min, _cam_z_max))
 	cam.position = _cam_target
 	cam.current = true
-	print("Level loaded: %d walls, cam at %s" % [wall_set.size(), cam.position])
+	print("Level loaded: %d walls, cam at %s, cam_rot=%s, projection=%d" % [wall_set.size(), cam.position, cam.rotation_degrees, cam.projection])
 
 	# Caterpillar – determine initial facing (first open direction)
 	for d in [Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT]:
