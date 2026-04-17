@@ -11,6 +11,7 @@ func _ready() -> void:
 	sphere.height = 0.35
 	_mesh.mesh = sphere
 	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.albedo_color = Color(0.2, 0.72, 0.15)
 	mat.emission_enabled = true
 	mat.emission = Color(0.1, 0.3, 0.05)

@@ -9,6 +9,7 @@ func _ready() -> void:
 	body_sphere.height = 0.45
 	body.mesh = body_sphere
 	var body_mat := StandardMaterial3D.new()
+	body_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	body_mat.albedo_color = Color(0.15, 0.12, 0.12)
 	body.material_override = body_mat
 	body.position.y = 0.22
@@ -22,6 +23,7 @@ func _ready() -> void:
 	head_sphere.height = 0.28
 	head.mesh = head_sphere
 	var head_mat := StandardMaterial3D.new()
+	head_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	head_mat.albedo_color = Color(0.2, 0.15, 0.15)
 	head.material_override = head_mat
 	head.position = Vector3(0, 0.32, -0.22)
@@ -30,6 +32,7 @@ func _ready() -> void:
 
 	# Red eyes
 	var eye_mat := StandardMaterial3D.new()
+	eye_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	eye_mat.albedo_color = Color(0.9, 0.1, 0.1)
 	eye_mat.emission_enabled = true
 	eye_mat.emission = Color(0.9, 0.1, 0.1)
@@ -46,6 +49,7 @@ func _ready() -> void:
 
 	# Legs
 	var leg_mat := StandardMaterial3D.new()
+	leg_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	leg_mat.albedo_color = Color(0.12, 0.1, 0.1)
 	for side in [-1.0, 1.0]:
 		for i in range(4):

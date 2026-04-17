@@ -3,6 +3,7 @@ extends Node3D
 const CELL := 1.0
 const WALL_HEIGHT := 0.85
 const CAM_HEIGHT := 20.0
+const ORTHO_SIZE := 14.0
 const GROUND_COLOR := Color(0.76, 0.70, 0.50)
 const BUSH_TOP := Color(0.55, 0.78, 0.15)
 const BUSH_BOTTOM := Color(0.18, 0.45, 0.10)
@@ -17,7 +18,7 @@ const Exit3DScript := preload("res://scripts/exit_portal_3d.gd")
 const LEVELS := [
 [
 "#######################",
-"#P....#.....#.....#...#",
+"#.....#.....#.....#...#",
 "###.#.#.###.#.###.#.#.#",
 "#...#.#...#...#...#.#.#",
 "#.###.###.#####.###.#.#",
@@ -37,12 +38,12 @@ const LEVELS := [
 "#.#######.#########.#.#",
 "#...#...#.....#.....#.#",
 "###.#.#.#####.#.#####.#",
-"#...#.#...S...#.....E##",
+"#P..#.#...S...#.....E##",
 "#######################",
 ],
 [
 "###########################",
-"#P....#.......#.....#.....#",
+"#.....#.......#.....#.....#",
 "###.#.#.#####.#.###.#.###.#",
 "#...#.#.....#.#...#.#...#.#",
 "#.###.#####.#.###.#.###.#.#",
@@ -78,12 +79,12 @@ const LEVELS := [
 "#.###.#.#####.#.#.#####.#.#",
 "#...#.#.....#...#.....#...#",
 "###.#.#################.###",
-"#...#..............L...E..#",
+"#P..#..............L...E..#",
 "###########################",
 ],
 [
 "###############################",
-"#P....#.......#.......#.......#",
+"#.....#.......#.......#.......#",
 "###.#.#.#####.#.#####.#.#####.#",
 "#...#.#.....#...#...#...#...#.#",
 "#.###.#####.#####.#.#####.#.#.#",
@@ -121,7 +122,7 @@ const LEVELS := [
 "#####.#.###.#.#####.###.#.#.#.#",
 "#.....#...#...#...#...#...#.#.#",
 "#.#######.#####.#.###.#####.#.#",
-"#....S....L.....#.......L...E.#",
+"#P...S....L.....#.......L...E.#",
 "###############################",
 ],
 ]
@@ -154,6 +155,8 @@ var _wall_mat: ShaderMaterial
 var _wall_mesh: BoxMesh
 var _ground_mat: StandardMaterial3D
 var _cam_target := Vector3.ZERO
+var _cam_z_min := -1e9
+var _cam_z_max := 1e9
 var _wall_cells: Array[Vector2i] = []
 var _diag_timer := 0.0
 var _move_count := 0
@@ -167,7 +170,7 @@ var _frame_count := 0
 @onready var win_panel: ColorRect = $CanvasLayer/WinPanel
 
 func _ready() -> void:
-	RenderingServer.set_default_clear_color(Color(0.35, 0.55, 0.25))
+	RenderingServer.set_default_clear_color(Color(0.12, 0.18, 0.08))
 	_init_shared_resources()
 	_setup_lighting()
 	$CanvasLayer/HUD/TopBar/RetryButton.pressed.connect(_on_retry)
@@ -180,83 +183,98 @@ func _init_shared_resources() -> void:
 	var hedge_shader := Shader.new()
 	hedge_shader.code = "
 shader_type spatial;
+render_mode cull_disabled, unshaded;
 uniform vec3 color_top : source_color = vec3(0.55, 0.78, 0.15);
 uniform vec3 color_bot : source_color = vec3(0.18, 0.45, 0.10);
+uniform sampler2D leaf_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
+uniform float tex_scale : hint_range(0.1, 8.0) = 2.0;
+uniform float tex_influence : hint_range(0.0, 1.0) = 0.6;
 
-float hash(vec3 p) {
-    p = fract(p * vec3(443.897, 441.423, 437.195));
-    p += dot(p, p.yzx + 19.19);
-    return fract((p.x + p.y) * p.z);
-}
+varying vec3 v_world_pos;
+varying vec3 v_world_normal;
 
 void vertex() {
-    // Round the top edges to make hedge shape
+    // Capture stable world-space position BEFORE any vertex modification
+    v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+    v_world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+
+    // Rounded-box SDF-style rounding for all edges and corners
+    float half_w = 0.5;
     float half_h = 0.425;
-    float top_t = clamp((VERTEX.y - half_h * 0.3) / (half_h * 0.7), 0.0, 1.0);
-    float round_factor = sqrt(1.0 - top_t * top_t) * 0.12;
-    // Pull top vertices inward for rounded top
-    if (VERTEX.y > half_h * 0.3) {
-        float edge_dist = max(abs(VERTEX.x), abs(VERTEX.z)) / 0.5;
-        VERTEX.y -= (1.0 - sqrt(1.0 - pow(edge_dist * top_t, 2.0))) * 0.15 * top_t;
+    float r = 0.1;
+
+    vec3 local = VERTEX;
+    vec3 s = sign(local);
+    vec3 a = abs(local);
+
+    vec3 inner = vec3(half_w - r, half_h - r, half_w - r);
+    vec3 d = max(a - inner, vec3(0.0));
+    float l = length(d);
+    if (l > 0.001) {
+        vec3 rounded = min(a, inner) + d * (r / l);
+        local = s * rounded;
     }
-    // Subtle bumps for organic feel
-    float n = hash(floor((MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz * 8.0));
-    VERTEX += NORMAL * n * 0.015;
+    VERTEX = local;
 }
 
 void fragment() {
-    vec3 world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+    // Use the stable pre-rounding world position from the vertex shader
+    vec3 blend_weights = abs(v_world_normal);
+    blend_weights = pow(blend_weights, vec3(4.0));
+    blend_weights /= (blend_weights.x + blend_weights.y + blend_weights.z);
+
+    // Triplanar sampling using stable coordinates
+    vec3 tex_x = texture(leaf_tex, v_world_pos.yz * tex_scale).rgb;
+    vec3 tex_y = texture(leaf_tex, v_world_pos.xz * tex_scale).rgb;
+    vec3 tex_z = texture(leaf_tex, v_world_pos.xy * tex_scale).rgb;
+    vec3 leaf_col = tex_x * blend_weights.x + tex_y * blend_weights.y + tex_z * blend_weights.z;
+
     // Vertical gradient from bottom to top
-    float h = clamp(NORMAL.y * 0.3 + (world_pos.y / 0.85), 0.0, 1.0);
-    // Leaf-like noise pattern
-    float n = hash(floor(world_pos * 12.0));
-    float n2 = hash(floor(world_pos * 6.0 + vec3(100.0)));
+    float h = clamp(v_world_pos.y / 0.85, 0.0, 1.0);
     vec3 base = mix(color_bot, color_top, h);
-    // Darken some patches for leaf cluster look
-    base *= 0.85 + n * 0.3;
-    // Slight highlight spots
-    base += vec3(0.03, 0.06, 0.0) * step(0.75, n2);
+
+    // Blend the leaf texture pattern with the gradient colour
+    base = mix(base, base * leaf_col * 1.3, tex_influence);
+
     ALBEDO = base;
-    ROUGHNESS = 0.8;
-    SPECULAR = 0.1;
 }
 "
 	_wall_mat = ShaderMaterial.new()
 	_wall_mat.shader = hedge_shader
 	_wall_mat.set_shader_parameter("color_top", Vector3(BUSH_TOP.r, BUSH_TOP.g, BUSH_TOP.b))
 	_wall_mat.set_shader_parameter("color_bot", Vector3(BUSH_BOTTOM.r, BUSH_BOTTOM.g, BUSH_BOTTOM.b))
+	var leaf_tex := load("res://assets/New/leaf_pattern.png") as Texture2D
+	if leaf_tex:
+		_wall_mat.set_shader_parameter("leaf_tex", leaf_tex)
+	_wall_mat.set_shader_parameter("tex_scale", 0.4)
+	_wall_mat.set_shader_parameter("tex_influence", 0.6)
 
 	_wall_mesh = BoxMesh.new()
 	_wall_mesh.size = Vector3(CELL, WALL_HEIGHT, CELL)
+	_wall_mesh.subdivide_width = 8
+	_wall_mesh.subdivide_height = 8
+	_wall_mesh.subdivide_depth = 8
 
 	_ground_mat = StandardMaterial3D.new()
-	_ground_mat.albedo_color = Color.WHITE
-
-	_ground_mat = StandardMaterial3D.new()
-	_ground_mat.albedo_color = Color.WHITE
+	_ground_mat.albedo_color = Color(0.93, 0.85, 0.65)
 	_ground_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	var ground_tex := load("res://assets/background_pattern.png") as Texture2D
+	var ground_tex := load("res://assets/background_sand.png") as Texture2D
 	if ground_tex:
 		_ground_mat.albedo_texture = ground_tex
-		_ground_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		_ground_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 
 func _setup_lighting() -> void:
-	# Directional light with shadows
-	var light := DirectionalLight3D.new()
-	light.rotation_degrees = Vector3(-50, -30, 0)
-	light.shadow_enabled = true
-	light.light_energy = 1.2
-	light.light_color = Color(1.0, 0.95, 0.88)
-	add_child(light)
+	# No directional light – bushes and ground are unshaded, so it only
+	# caused uneven brightness across the screen via shadow cascades.
 
-	# World environment
+	# World environment – ambient-only lighting for decorations & caterpillar
 	var world_env := WorldEnvironment.new()
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color(0.4, 0.6, 0.3)
+	env.background_color = Color(0.12, 0.18, 0.08)
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.5, 0.52, 0.45)
-	env.ambient_light_energy = 0.8
+	env.ambient_light_color = Color(0.85, 0.85, 0.80)
+	env.ambient_light_energy = 1.0
 	world_env.environment = env
 	add_child(world_env)
 
@@ -330,37 +348,62 @@ func load_level(idx: int) -> void:
 	# Build all walls as a single MultiMesh
 	_build_wall_multimesh()
 
-	# Camera setup – perspective, tilted slightly down for 3D look
-	cam.projection = Camera3D.PROJECTION_PERSPECTIVE
-	cam.fov = 35.0
+	# Scatter decorations outside the maze
+	_spawn_decorations()
+
+	# Camera setup – orthographic for uniform brightness across the screen
+	cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+	cam.size = ORTHO_SIZE
 	cam.near = 0.1
 	cam.far = 100.0
 	cam.rotation_degrees = Vector3(-65, 0, 0)
+	# Compute camera Z bounds so the view stays within the maze
+	var cam_offset_z := CAM_HEIGHT / tan(deg_to_rad(65.0))
+	# Orthographic: visible Z range on ground = size / sin(tilt), symmetric top/bottom
+	var half_view_z := ORTHO_SIZE / (2.0 * sin(deg_to_rad(65.0)))
+	var maze_z_top := -0.5 * CELL
+	var maze_z_bot := (float(_maze_h) - 0.5) * CELL
+	_cam_z_min = maze_z_top + cam_offset_z + half_view_z
+	_cam_z_max = maze_z_bot + cam_offset_z - half_view_z
+	if _cam_z_min > _cam_z_max:
+		var mid := (_cam_z_min + _cam_z_max) * 0.5
+		_cam_z_min = mid
+		_cam_z_max = mid
+
 	var head_pos := _pos(player_cell)
-	var cam_offset_z := CAM_HEIGHT * tan(deg_to_rad(25.0))  # offset back to keep player centered
-	_cam_target = Vector3(head_pos.x, CAM_HEIGHT, head_pos.z + cam_offset_z)
+	_cam_target = Vector3(head_pos.x, CAM_HEIGHT, clampf(head_pos.z + cam_offset_z, _cam_z_min, _cam_z_max))
 	cam.position = _cam_target
 	cam.current = true
 	print("Level loaded: %d walls, cam at %s" % [wall_set.size(), cam.position])
 
-	# Caterpillar – trail segments along valid path cells
-	segment_cells = [player_cell]
-	for i in range(1, 3):
-		var placed := false
-		for d in [Vector2i.DOWN, Vector2i.RIGHT, Vector2i.UP, Vector2i.LEFT]:
-			var candidate: Vector2i = segment_cells[-1] + d
-			if not wall_set.has(candidate) and not segment_cells.has(candidate):
-				segment_cells.append(candidate)
-				placed = true
-				break
-		if not placed:
-			segment_cells.append(segment_cells[-1])
+	# Caterpillar – determine initial facing (first open direction)
+	for d in [Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT]:
+		if not wall_set.has(player_cell + d):
+			facing = d
+			break
+	# Walk the head forward so the body/tail naturally trail behind.
+	# segment_cells[0] = head (front), segment_cells[-1] = tail (back)
+	var init_path: Array[Vector2i] = [player_cell]
+	var walk := player_cell
+	for i in range(2):
+		var next := walk + facing
+		if not wall_set.has(next) and not init_path.has(next):
+			init_path.push_front(next)
+			walk = next
+		else:
+			break
+	# init_path is [head, ..., original_pos]. Pad to at least 3 segments.
+	while init_path.size() < 3:
+		init_path.append(init_path[-1])
+	segment_cells = init_path
+	player_cell = segment_cells[0]
 	_rebuild_caterpillar()
 	_update_hud()
 	win_panel.visible = false
 	is_busy = false
 
 func _create_ground(w: int, h: int) -> void:
+	# Inner maze ground with sand/path texture
 	var mesh_inst := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(float(w) * CELL, float(h) * CELL)
@@ -378,7 +421,196 @@ func _create_ground(w: int, h: int) -> void:
 	)
 	maze_layer.add_child(mesh_inst)
 
+	# Outer landscape ground – covers the visible area outside the maze
+	var pad := 30.0
+	var outer_w := float(w) * CELL + pad * 2.0
+	var outer_h := float(h) * CELL + pad * 2.0
+	var outer_inst := MeshInstance3D.new()
+	var outer_plane := PlaneMesh.new()
+	outer_plane.size = Vector2(outer_w, outer_h)
+	outer_plane.subdivide_width = 0
+	outer_plane.subdivide_depth = 0
+	outer_inst.mesh = outer_plane
+	var outer_mat := StandardMaterial3D.new()
+	outer_mat.albedo_color = Color(0.85, 0.85, 0.85)
+	outer_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var landscape_tex := load("res://assets/New/landscape-pattern.png") as Texture2D
+	if landscape_tex:
+		outer_mat.albedo_texture = landscape_tex
+		outer_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	# Tile proportionally to actual plane size so the texture isn't stretched
+	var tile_density := 0.15  # tiles per world unit
+	outer_mat.uv1_scale = Vector3(outer_w * tile_density, outer_h * tile_density, 1.0)
+	outer_inst.material_override = outer_mat
+	outer_inst.position = Vector3(
+		(float(w) - 1.0) * CELL * 0.5,
+		-0.02,
+		(float(h) - 1.0) * CELL * 0.5
+	)
+	maze_layer.add_child(outer_inst)
+
 # ── Entity factories ──
+
+# ── Decorations ──
+
+func _make_flower(pos: Vector3) -> void:
+	var root := Node3D.new()
+	root.position = pos
+	# Stem
+	var stem_mesh := CylinderMesh.new()
+	stem_mesh.top_radius = 0.02
+	stem_mesh.bottom_radius = 0.03
+	stem_mesh.height = 0.3
+	var stem_inst := MeshInstance3D.new()
+	stem_inst.mesh = stem_mesh
+	var stem_mat := StandardMaterial3D.new()
+	stem_mat.albedo_color = Color(0.2, 0.55, 0.15)
+	stem_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	stem_inst.material_override = stem_mat
+	stem_inst.position.y = 0.15
+	stem_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(stem_inst)
+	# Petals (a flattened sphere)
+	var petal_mesh := SphereMesh.new()
+	petal_mesh.radius = 0.1
+	petal_mesh.height = 0.08
+	var petal_inst := MeshInstance3D.new()
+	petal_inst.mesh = petal_mesh
+	var petal_mat := StandardMaterial3D.new()
+	var petal_colors := [Color(0.9, 0.2, 0.3), Color(0.95, 0.75, 0.2), Color(0.7, 0.3, 0.8), Color(1.0, 0.5, 0.6), Color(0.3, 0.55, 0.95)]
+	petal_mat.albedo_color = petal_colors[randi() % petal_colors.size()]
+	petal_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	petal_inst.material_override = petal_mat
+	petal_inst.position.y = 0.32
+	petal_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(petal_inst)
+	# Center
+	var center_mesh := SphereMesh.new()
+	center_mesh.radius = 0.04
+	center_mesh.height = 0.06
+	var center_inst := MeshInstance3D.new()
+	center_inst.mesh = center_mesh
+	var center_mat := StandardMaterial3D.new()
+	center_mat.albedo_color = Color(0.95, 0.85, 0.2)
+	center_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	center_inst.material_override = center_mat
+	center_inst.position.y = 0.35
+	center_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(center_inst)
+	root.rotation.y = randf() * TAU
+	var s := randf_range(0.7, 1.3)
+	root.scale = Vector3(s, s, s)
+	maze_layer.add_child(root)
+
+func _make_mushroom(pos: Vector3) -> void:
+	var root := Node3D.new()
+	root.position = pos
+	# Stem
+	var stem_mesh := CylinderMesh.new()
+	stem_mesh.top_radius = 0.05
+	stem_mesh.bottom_radius = 0.06
+	stem_mesh.height = 0.18
+	var stem_inst := MeshInstance3D.new()
+	stem_inst.mesh = stem_mesh
+	var stem_mat := StandardMaterial3D.new()
+	stem_mat.albedo_color = Color(0.9, 0.88, 0.78)
+	stem_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	stem_inst.material_override = stem_mat
+	stem_inst.position.y = 0.09
+	stem_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(stem_inst)
+	# Cap (hemisphere)
+	var cap_mesh := SphereMesh.new()
+	cap_mesh.radius = 0.12
+	cap_mesh.height = 0.14
+	var cap_inst := MeshInstance3D.new()
+	cap_inst.mesh = cap_mesh
+	var cap_mat := StandardMaterial3D.new()
+	var cap_colors := [Color(0.8, 0.15, 0.12), Color(0.85, 0.55, 0.15), Color(0.6, 0.35, 0.2)]
+	cap_mat.albedo_color = cap_colors[randi() % cap_colors.size()]
+	cap_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	cap_inst.material_override = cap_mat
+	cap_inst.position.y = 0.2
+	cap_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(cap_inst)
+	root.rotation.y = randf() * TAU
+	var s := randf_range(0.6, 1.4)
+	root.scale = Vector3(s, s, s)
+	maze_layer.add_child(root)
+
+func _make_rock(pos: Vector3) -> void:
+	var root := Node3D.new()
+	root.position = pos
+	var rock_mesh := SphereMesh.new()
+	var rx := randf_range(0.08, 0.18)
+	var ry := randf_range(0.06, 0.12)
+	rock_mesh.radius = rx
+	rock_mesh.height = ry * 2.0
+	var rock_inst := MeshInstance3D.new()
+	rock_inst.mesh = rock_mesh
+	var rock_mat := StandardMaterial3D.new()
+	var grey := randf_range(0.35, 0.6)
+	rock_mat.albedo_color = Color(grey, grey * 0.95, grey * 0.9)
+	rock_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	rock_inst.material_override = rock_mat
+	rock_inst.position.y = ry * 0.5
+	rock_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(rock_inst)
+	root.rotation.y = randf() * TAU
+	root.rotation.x = randf_range(-0.15, 0.15)
+	root.rotation.z = randf_range(-0.15, 0.15)
+	maze_layer.add_child(root)
+
+func _make_grass_tuft(pos: Vector3) -> void:
+	var root := Node3D.new()
+	root.position = pos
+	var blade_count := randi_range(3, 6)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(randf_range(0.25, 0.45), randf_range(0.55, 0.75), randf_range(0.1, 0.2))
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	for i in blade_count:
+		var blade := MeshInstance3D.new()
+		var bm := PrismMesh.new()
+		bm.size = Vector3(0.03, randf_range(0.15, 0.35), 0.005)
+		blade.mesh = bm
+		blade.material_override = mat
+		blade.position = Vector3(randf_range(-0.06, 0.06), bm.size.y * 0.5, randf_range(-0.06, 0.06))
+		blade.rotation.y = randf() * TAU
+		blade.rotation.z = randf_range(-0.3, 0.3)
+		blade.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(blade)
+	maze_layer.add_child(root)
+
+func _spawn_decorations() -> void:
+	# Place decorations in the empty strips to the left and right of the maze
+	var margin := 8.0  # how far out from maze edge to scatter
+	var maze_left := -0.5 * CELL
+	var maze_right := (float(_maze_w) - 0.5) * CELL
+	var maze_top := -0.5 * CELL
+	var maze_bot := (float(_maze_h) - 0.5) * CELL
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = current_level * 12345 + 42  # deterministic per level
+
+	# Density: number of decorations per side
+	var count_per_side := int(_maze_h * 1.5)
+
+	for side in 2:  # 0 = left, 1 = right
+		for _i in count_per_side:
+			var z := rng.randf_range(maze_top - 1.0, maze_bot + 1.0)
+			var x: float
+			if side == 0:
+				x = rng.randf_range(maze_left - margin, maze_left - 0.8)
+			else:
+				x = rng.randf_range(maze_right + 0.8, maze_right + margin)
+			var pos := Vector3(x, 0.0, z)
+			var kind := rng.randi_range(0, 3)
+			match kind:
+				0: _make_flower(pos)
+				1: _make_mushroom(pos)
+				2: _make_rock(pos)
+				3: _make_grass_tuft(pos)
 
 func _build_wall_multimesh() -> void:
 	# Bush body
@@ -394,7 +626,7 @@ func _build_wall_multimesh() -> void:
 	var mm_inst := MultiMeshInstance3D.new()
 	mm_inst.multimesh = mm
 	mm_inst.material_override = _wall_mat
-	mm_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	mm_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	maze_layer.add_child(mm_inst)
 
 func _make_leaf(cell: Vector2i) -> void:
@@ -438,7 +670,7 @@ func _rebuild_caterpillar() -> void:
 	_update_taper()
 
 func _calc_positions() -> Array[Vector3]:
-	var spacing := CELL * 0.55
+	var spacing := CELL * 0.30
 	var positions: Array[Vector3] = []
 
 	# Build polyline from grid cell centres
@@ -662,7 +894,7 @@ func _move_backward() -> void:
 	_segment_target_rots = _calc_target_rotations()
 	var head3 := _pos(segment_cells[0])
 	var cam_offset_z := CAM_HEIGHT * tan(deg_to_rad(25.0))
-	_cam_target = Vector3(head3.x, CAM_HEIGHT, head3.z + cam_offset_z)
+	_cam_target = Vector3(head3.x, CAM_HEIGHT, clampf(head3.z + cam_offset_z, _cam_z_min, _cam_z_max))
 
 	# When reversing, the tail is the leading end — check it for pickups/hazards
 	var lead_cell := new_tail
@@ -718,7 +950,7 @@ func _move_to(target: Vector2i) -> void:
 	_segment_target_rots = _calc_target_rotations()
 	var tgt3 := _pos(target)
 	var cam_offset_z := CAM_HEIGHT * tan(deg_to_rad(25.0))
-	_cam_target = Vector3(tgt3.x, CAM_HEIGHT, tgt3.z + cam_offset_z)
+	_cam_target = Vector3(tgt3.x, CAM_HEIGHT, clampf(tgt3.z + cam_offset_z, _cam_z_min, _cam_z_max))
 
 	# Collect leaf
 	if leaves.has(target):

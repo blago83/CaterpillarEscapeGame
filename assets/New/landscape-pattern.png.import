@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://c88hm8y1rg72o"
-path="res://.godot/imported/background_pattern.png-522464612fe3f3976baa5cbe2b496f1e.ctex"
+uid="uid://dwksy5ykjgvlg"
+path="res://.godot/imported/landscape-pattern.png-ab1cfdd599e8ce1f3dc69e4ee87bf293.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/background_pattern.png"
-dest_files=["res://.godot/imported/background_pattern.png-522464612fe3f3976baa5cbe2b496f1e.ctex"]
+source_file="res://assets/New/landscape-pattern.png"
+dest_files=["res://.godot/imported/landscape-pattern.png-ab1cfdd599e8ce1f3dc69e4ee87bf293.ctex"]
 
 [params]
 

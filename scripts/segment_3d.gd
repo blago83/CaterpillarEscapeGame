@@ -15,17 +15,18 @@ func _ready() -> void:
 
 	_mesh = MeshInstance3D.new()
 	_mat = StandardMaterial3D.new()
+	_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 
 	var radius: float
 	match seg_type:
 		"head":
-			radius = 0.35
+			radius = 0.28
 			_mat.albedo_color = Color(0.45, 0.82, 0.22)
 		"tail":
-			radius = 0.2
+			radius = 0.24
 			_mat.albedo_color = Color(0.40, 0.72, 0.20)
 		_:
-			radius = 0.28
+			radius = 0.26
 			_mat.albedo_color = Color(0.42, 0.78, 0.18)
 
 	var sphere := SphereMesh.new()
@@ -37,7 +38,7 @@ func _ready() -> void:
 	_mesh.material_override = _mat
 	_mesh.position.y = radius
 	_base_mesh_y = radius
-	_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_mesh)
 
 	if seg_type == "head":
@@ -49,8 +50,10 @@ func _ready() -> void:
 
 func _add_eyes(head_radius: float) -> void:
 	var eye_white_mat := StandardMaterial3D.new()
+	eye_white_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	eye_white_mat.albedo_color = Color(1, 1, 1)
 	var pupil_mat := StandardMaterial3D.new()
+	pupil_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	pupil_mat.albedo_color = Color(0.05, 0.05, 0.05)
 
 	for side in [-1.0, 1.0]:
@@ -87,6 +90,7 @@ func _add_eyes(head_radius: float) -> void:
 func _add_mouth(head_radius: float) -> void:
 	# Simple smiling mouth – a small dark torus-like shape using a flattened sphere
 	var mouth_mat := StandardMaterial3D.new()
+	mouth_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mouth_mat.albedo_color = Color(0.15, 0.08, 0.05)
 	var mouth := MeshInstance3D.new()
 	var mouth_s := SphereMesh.new()
@@ -100,8 +104,10 @@ func _add_mouth(head_radius: float) -> void:
 
 func _add_shoes(seg_radius: float, is_small: bool) -> void:
 	var shoe_mat := StandardMaterial3D.new()
+	shoe_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	shoe_mat.albedo_color = Color(0.85, 0.15, 0.1)  # Red shoes
 	var sole_mat := StandardMaterial3D.new()
+	sole_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	sole_mat.albedo_color = Color(0.95, 0.85, 0.5)  # Yellow-ish sole
 
 	var shoe_w := 0.08 if is_small else 0.1
@@ -161,23 +167,23 @@ func update_seg_type(new_type: String) -> void:
 		return
 	match new_type:
 		"head":
-			sphere.radius = 0.35
-			sphere.height = 0.7
-			_mat.albedo_color = Color(0.45, 0.82, 0.22)
-			_base_mesh_y = 0.35
-			_mesh.position.y = 0.35
-		"tail":
-			sphere.radius = 0.2
-			sphere.height = 0.4
-			_mat.albedo_color = Color(0.40, 0.72, 0.20)
-			_base_mesh_y = 0.2
-			_mesh.position.y = 0.2
-		_:
 			sphere.radius = 0.28
 			sphere.height = 0.56
-			_mat.albedo_color = Color(0.42, 0.78, 0.18)
+			_mat.albedo_color = Color(0.45, 0.82, 0.22)
 			_base_mesh_y = 0.28
 			_mesh.position.y = 0.28
+		"tail":
+			sphere.radius = 0.24
+			sphere.height = 0.48
+			_mat.albedo_color = Color(0.40, 0.72, 0.20)
+			_base_mesh_y = 0.24
+			_mesh.position.y = 0.24
+		_:
+			sphere.radius = 0.26
+			sphere.height = 0.52
+			_mat.albedo_color = Color(0.42, 0.78, 0.18)
+			_base_mesh_y = 0.26
+			_mesh.position.y = 0.26
 
 func flash_red() -> void:
 	if _mat:
