@@ -165,6 +165,7 @@ var _p_was_pressed := false
 var _idle_timer := 0.0
 const IDLE_LOOK_DELAY := 3.0  # seconds before caterpillar looks at camera
 var _is_looking_at_camera := false
+var _body_shadow: MeshInstance3D = null
 
 @onready var cam: Camera3D = $Camera3D
 @onready var maze_layer: Node3D = $MazeLayer
@@ -656,6 +657,7 @@ func _rebuild_caterpillar() -> void:
 	for c in cat_layer.get_children():
 		c.queue_free()
 	segment_nodes.clear()
+	_body_shadow = null
 	for i in segment_cells.size():
 		var node := Node3D.new()
 		node.set_script(Segment3DScript)
@@ -668,6 +670,49 @@ func _rebuild_caterpillar() -> void:
 	_update_rotations_instant()
 	_segment_target_rots = _calc_target_rotations()
 	_update_taper()
+	_ensure_body_shadow()
+	_update_body_shadow()
+
+func _ensure_body_shadow() -> void:
+	if _body_shadow:
+		return
+	_body_shadow = MeshInstance3D.new()
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.55
+	mesh.height = 0.08
+	mesh.radial_segments = 24
+	mesh.rings = 8
+	_body_shadow.mesh = mesh
+	var shadow_mat := StandardMaterial3D.new()
+	shadow_mat.albedo_color = Color(0.0, 0.0, 0.0, 0.14)
+	shadow_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	shadow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	shadow_mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
+	shadow_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	shadow_mat.render_priority = -1
+	_body_shadow.material_override = shadow_mat
+	_body_shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	cat_layer.add_child(_body_shadow)
+
+func _update_body_shadow() -> void:
+	if not _body_shadow:
+		return
+	if segment_nodes.is_empty():
+		_body_shadow.visible = false
+		return
+	_body_shadow.visible = true
+	var center := Vector3.ZERO
+	for segment in segment_nodes:
+		center += segment.position
+	center /= float(segment_nodes.size())
+	var head_pos := segment_nodes[0].position
+	var tail_pos := segment_nodes[-1].position
+	var spine := head_pos - tail_pos
+	var length := maxf(spine.length() + 1.0, 2.4)
+	var yaw := atan2(spine.x, spine.z)
+	_body_shadow.position = Vector3(center.x, 0.03, center.z)
+	_body_shadow.rotation = Vector3(0.0, yaw, 0.0)
+	_body_shadow.scale = Vector3(1.2, 0.18, length)
 
 func _calc_positions() -> Array[Vector3]:
 	var spacing := CELL * 0.30
@@ -869,6 +914,7 @@ func _process(delta: float) -> void:
 			segment_nodes[i].position = segment_nodes[i].position.lerp(_segment_targets[i], lerp_speed)
 		if i < _segment_target_rots.size():
 			segment_nodes[i].rotation.y = lerp_angle(segment_nodes[i].rotation.y, _segment_target_rots[i], lerp_speed)
+	_update_body_shadow()
 
 	# ── Idle detection: tell head segment it's idle ──
 	_idle_timer += delta

@@ -1,0 +1,62 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/level_0.gd" id="1_script"]
+
+[node name="Level0" type="Node3D"]
+script = ExtResource("1_script")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+
+[node name="World" type="Node3D" parent="."]
+
+[node name="PlayerRoot" type="Node3D" parent="."]
+
+[node name="CanvasLayer" type="CanvasLayer" parent="."]
+
+[node name="HUD" type="Control" parent="CanvasLayer"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+
+[node name="Panel" type="PanelContainer" parent="CanvasLayer/HUD"]
+layout_mode = 1
+anchors_preset = 1
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_left = 20.0
+offset_top = 20.0
+offset_right = 420.0
+offset_bottom = 170.0
+
+[node name="VBox" type="VBoxContainer" parent="CanvasLayer/HUD/Panel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="InfoLabel" type="Label" parent="CanvasLayer/HUD/Panel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "Level 0 Test Ground"
+autowrap_mode = 3
+
+[node name="ZoomLabel" type="Label" parent="CanvasLayer/HUD/Panel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "Zoom: 100%"
+
+[node name="Buttons" type="HBoxContainer" parent="CanvasLayer/HUD/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="BackButton" type="Button" parent="CanvasLayer/HUD/Panel/VBox/Buttons"]
+layout_mode = 2
+custom_minimum_size = Vector2(120, 0)
+theme_override_font_sizes/font_size = 20
+text = "Back"
+
+[node name="ResetButton" type="Button" parent="CanvasLayer/HUD/Panel/VBox/Buttons"]
+layout_mode = 2
+custom_minimum_size = Vector2(120, 0)
+theme_override_font_sizes/font_size = 20
+text = "Reset"

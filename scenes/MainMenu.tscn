@@ -65,6 +65,12 @@ layout_mode = 2
 theme_override_font_sizes/font_size = 36
 text = "Play"
 
+[node name="TestButton" type="Button" parent="VBox"]
+custom_minimum_size = Vector2(0, 72)
+layout_mode = 2
+theme_override_font_sizes/font_size = 30
+text = "Level 0 Test"
+
 [node name="QuitButton" type="Button" parent="VBox"]
 custom_minimum_size = Vector2(0, 80)
 layout_mode = 2
