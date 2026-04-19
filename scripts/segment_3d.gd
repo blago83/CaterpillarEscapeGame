@@ -98,9 +98,7 @@ func _ready() -> void:
 	if seg_type == "head":
 		_add_neck_connector(radius)
 
-	# Dark separator ring between segments (skip for head front)
-	if seg_type != "head":
-		_add_segment_separator(radius)
+	# (separator rings removed for cleaner look)
 
 	match seg_type:
 		"head":
@@ -312,23 +310,7 @@ func _add_neck_connector(radius: float) -> void:
 	neck_belly.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_mesh.add_child(neck_belly)
 
-	var neck_ring := MeshInstance3D.new()
-	var torus := TorusMesh.new()
-	torus.inner_radius = radius * 0.24
-	torus.outer_radius = radius * 0.28
-	torus.ring_segments = 18
-	torus.rings = 8
-	neck_ring.mesh = torus
-	var ring_mat := StandardMaterial3D.new()
-	ring_mat.albedo_color = Color(0.34, 0.56, 0.16)
-	ring_mat.specular = 0.18
-	ring_mat.roughness = 0.82
-	neck_ring.material_override = ring_mat
-	neck_ring.position = Vector3(0.0, -radius * 0.01, radius * 0.46)
-	neck_ring.rotation.x = deg_to_rad(90)
-	neck_ring.scale = Vector3(1.0, 0.22, 1.0)
-	neck_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_mesh.add_child(neck_ring)
+	# (neck ring removed for cleaner look)
 
 func _add_segment_separator(radius: float) -> void:
 	# Soft darker green crease where this segment meets the one in front
