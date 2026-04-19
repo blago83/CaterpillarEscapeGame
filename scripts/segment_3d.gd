@@ -82,8 +82,9 @@ func _ready() -> void:
 	sphere.rings = 16
 	_mesh.mesh = sphere
 	_mesh.material_override = _mat
-	_mesh.position.y = radius * 0.85
-	_base_mesh_y = radius * 0.85
+	var head_lift := radius * 0.16 if seg_type == "head" else 0.0
+	_mesh.position.y = radius * 0.85 + head_lift
+	_base_mesh_y = radius * 0.85 + head_lift
 	_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	add_child(_mesh)
 
@@ -94,6 +95,9 @@ func _ready() -> void:
 	# Glossy top highlight — wet/shiny look on top of every segment
 	_add_top_shine(radius, seg_type)
 
+	if seg_type == "head":
+		_add_neck_connector(radius)
+
 	# Dark separator ring between segments (skip for head front)
 	if seg_type != "head":
 		_add_segment_separator(radius)
@@ -102,6 +106,7 @@ func _ready() -> void:
 		"head":
 			# Face pivot – tilted upward so features face the overhead camera
 			var face_pivot := Node3D.new()
+			face_pivot.position = Vector3(0.0, radius * 0.04, -radius * 0.02)
 			face_pivot.rotation.x = deg_to_rad(55)  # Positive = tilts front-face features upward
 			_mesh.add_child(face_pivot)
 			_add_eyes(radius, face_pivot)
@@ -264,6 +269,66 @@ func _add_top_shine(radius: float, seg_type: String) -> void:
 	shine.position = Vector3(0.0, radius * 0.62, z_off)
 	shine.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_mesh.add_child(shine)
+
+func _add_neck_connector(radius: float) -> void:
+	# A short partial body piece behind the head so the head can sit slightly higher
+	# without looking detached from the first segment.
+	var neck_mat := StandardMaterial3D.new()
+	neck_mat.albedo_color = Color(0.58, 0.80, 0.24)
+	neck_mat.specular = 0.38
+	neck_mat.roughness = 0.52
+	neck_mat.rim_enabled = true
+	neck_mat.rim = 0.28
+	neck_mat.rim_tint = 0.15
+
+	var neck := MeshInstance3D.new()
+	var neck_mesh := SphereMesh.new()
+	neck_mesh.radius = radius * 0.22
+	neck_mesh.height = radius * 0.34
+	neck_mesh.radial_segments = 20
+	neck_mesh.rings = 10
+	neck.mesh = neck_mesh
+	neck.material_override = neck_mat
+	neck.position = Vector3(0.0, -radius * 0.02, radius * 0.34)
+	neck.scale = Vector3(1.10, 0.82, 1.65)
+	neck.rotation.x = deg_to_rad(-10)
+	neck.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_mesh.add_child(neck)
+
+	var neck_belly := MeshInstance3D.new()
+	var neck_belly_mesh := SphereMesh.new()
+	neck_belly_mesh.radius = radius * 0.16
+	neck_belly_mesh.height = radius * 0.14
+	neck_belly_mesh.radial_segments = 14
+	neck_belly_mesh.rings = 8
+	neck_belly.mesh = neck_belly_mesh
+	var neck_belly_mat := StandardMaterial3D.new()
+	neck_belly_mat.albedo_color = Color(0.78, 0.90, 0.42)
+	neck_belly_mat.specular = 0.16
+	neck_belly_mat.roughness = 0.78
+	neck_belly.material_override = neck_belly_mat
+	neck_belly.position = Vector3(0.0, -radius * 0.11, radius * 0.35)
+	neck_belly.scale = Vector3(1.0, 0.72, 1.25)
+	neck_belly.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_mesh.add_child(neck_belly)
+
+	var neck_ring := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = radius * 0.24
+	torus.outer_radius = radius * 0.28
+	torus.ring_segments = 18
+	torus.rings = 8
+	neck_ring.mesh = torus
+	var ring_mat := StandardMaterial3D.new()
+	ring_mat.albedo_color = Color(0.34, 0.56, 0.16)
+	ring_mat.specular = 0.18
+	ring_mat.roughness = 0.82
+	neck_ring.material_override = ring_mat
+	neck_ring.position = Vector3(0.0, -radius * 0.01, radius * 0.46)
+	neck_ring.rotation.x = deg_to_rad(90)
+	neck_ring.scale = Vector3(1.0, 0.22, 1.0)
+	neck_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_mesh.add_child(neck_ring)
 
 func _add_segment_separator(radius: float) -> void:
 	# Soft darker green crease where this segment meets the one in front

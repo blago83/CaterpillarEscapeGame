@@ -38,41 +38,56 @@ func _make_mouth_texture(expr: String) -> Texture2D:
 
 	match expr:
 		"happy":
-			_draw_open_smile(image, Vector2(128, 107), Vector2(62, 36), Vector2(128, 80), 1.00, true)
+			_draw_open_smile(image, Vector2(128, 109), Vector2(52, 30), Vector2(128, 82), 0.92, true)
 		"looking":
-			_draw_open_smile(image, Vector2(128, 108), Vector2(46, 31), Vector2(128, 81), 0.76, false)
+			_draw_open_smile(image, Vector2(128, 110), Vector2(42, 24), Vector2(128, 84), 0.66, false)
 		"sleeping":
 			_draw_sleeping_mouth(image)
 		_:
-			_draw_open_smile(image, Vector2(128, 107), Vector2(54, 30), Vector2(128, 80), 0.88, false)
+			_draw_cute_closed_smile(image, Vector2(128, 110))
 
 	return ImageTexture.create_from_image(image)
 
 func _draw_open_smile(image: Image, cavity_center: Vector2, cavity_radius: Vector2, lip_center: Vector2, tongue_scale: float, include_drool: bool) -> void:
-	var lip_half_width: int = int(round(cavity_radius.x * 0.34))
-	var lip_radius: int = int(round(cavity_radius.y * 0.28))
-	var lip_rect_height: int = maxi(3, int(round(lip_radius * 0.55)))
 	# Dark cavity.
 	_fill_ellipse(image, cavity_center, cavity_radius, mouth_cavity_color)
-	# Small rounded upper lip cap in the face color.
-	_fill_capsule_h(image, lip_center, lip_half_width, lip_radius, face_color)
-	_fill_rect(image, Rect2i(int(lip_center.x - lip_half_width), int(lip_center.y - lip_rect_height * 0.5), lip_half_width * 2, lip_rect_height), face_color)
+	# Rounded upper lip with a soft center bump, closer to the reference painting.
+	_fill_ellipse(image, lip_center + Vector2(0, -2), Vector2(cavity_radius.x * 0.34, cavity_radius.y * 0.24), face_color)
+	_fill_ellipse(image, lip_center + Vector2(-cavity_radius.x * 0.34, 2), Vector2(cavity_radius.x * 0.16, cavity_radius.y * 0.19), face_color)
+	_fill_ellipse(image, lip_center + Vector2(cavity_radius.x * 0.34, 2), Vector2(cavity_radius.x * 0.16, cavity_radius.y * 0.19), face_color)
+	_fill_rect(
+		image,
+		Rect2i(
+			int(lip_center.x - cavity_radius.x * 0.48),
+			int(lip_center.y - cavity_radius.y * 0.18),
+			int(cavity_radius.x * 0.96),
+			maxi(3, int(cavity_radius.y * 0.16))
+		),
+		face_color
+	)
 	# Thin dark smile line under the lip.
-	_draw_arc_band(image, cavity_center + Vector2(0, -9), Vector2(cavity_radius.x * 0.94, cavity_radius.y * 0.62), 4.0, Color(0.32, 0.10, 0.07, 0.90), 0.08, PI - 0.08)
+	_draw_arc_band(image, cavity_center + Vector2(0, -8), Vector2(cavity_radius.x * 0.92, cavity_radius.y * 0.60), 3.5, Color(0.32, 0.10, 0.07, 0.90), 0.08, PI - 0.08)
 	# Tongue with two lobes.
-	_fill_ellipse(image, cavity_center + Vector2(0, 14), Vector2(29, 15) * tongue_scale, tongue_color)
-	_fill_ellipse(image, cavity_center + Vector2(-15, 9), Vector2(16, 13) * tongue_scale, tongue_color)
-	_fill_ellipse(image, cavity_center + Vector2(15, 9), Vector2(16, 13) * tongue_scale, tongue_color)
-	_fill_ellipse(image, cavity_center + Vector2(0, 6), Vector2(3, 16) * tongue_scale, Color(0.84, 0.50, 0.45, 0.65))
-	_fill_ellipse(image, cavity_center + Vector2(15, 6), Vector2(10, 7) * tongue_scale, Color(1.0, 0.96, 0.93, 0.38))
+	_fill_ellipse(image, cavity_center + Vector2(0, 13), Vector2(24, 12) * tongue_scale, tongue_color)
+	_fill_ellipse(image, cavity_center + Vector2(-13, 8), Vector2(14, 11) * tongue_scale, tongue_color)
+	_fill_ellipse(image, cavity_center + Vector2(13, 8), Vector2(14, 11) * tongue_scale, tongue_color)
+	_fill_ellipse(image, cavity_center + Vector2(0, 5), Vector2(2.5, 13) * tongue_scale, Color(0.84, 0.50, 0.45, 0.62))
+	_fill_ellipse(image, cavity_center + Vector2(12, 5), Vector2(8, 6) * tongue_scale, Color(1.0, 0.96, 0.93, 0.34))
 	if include_drool and drool_enabled:
 		_fill_ellipse(image, cavity_center + Vector2(-10, -6), Vector2(4, 4), Color(1.0, 0.98, 0.90, 0.50))
 		_fill_capsule_v(image, cavity_center + Vector2(-2, 49), 6, 24, Color(1.0, 0.98, 0.90, 0.36))
 		_fill_ellipse(image, cavity_center + Vector2(-2, 72), Vector2(7, 11), Color(1.0, 0.98, 0.90, 0.36))
 
+func _draw_cute_closed_smile(image: Image, center: Vector2) -> void:
+	var line_color := Color(0.24, 0.08, 0.07, 0.92)
+	_draw_arc_band(image, center + Vector2(-10, 0), Vector2(11, 7), 2.6, line_color, 0.10, PI - 0.28)
+	_draw_arc_band(image, center + Vector2(10, 0), Vector2(11, 7), 2.6, line_color, 0.28, PI - 0.10)
+	_draw_arc_band(image, center + Vector2(0, -1), Vector2(6, 4), 2.4, line_color, 0.18, PI - 0.18)
+	_fill_ellipse(image, center + Vector2(0, 6), Vector2(6, 2), Color(0.86, 0.70, 0.54, 0.45))
+
 func _draw_sleeping_mouth(image: Image) -> void:
-	_draw_arc_band(image, Vector2(128, 106), Vector2(20, 8), 3.0, Color(0.24, 0.08, 0.07, 0.92), 0.10, PI - 0.10)
-	_fill_ellipse(image, Vector2(128, 110), Vector2(8, 4), Color(0.80, 0.44, 0.42, 0.55))
+	_draw_arc_band(image, Vector2(128, 109), Vector2(18, 7), 2.8, Color(0.24, 0.08, 0.07, 0.88), 0.10, PI - 0.10)
+	_fill_ellipse(image, Vector2(128, 113), Vector2(7, 3), Color(0.80, 0.44, 0.42, 0.42))
 
 func _fill_rect(image: Image, rect: Rect2i, color: Color) -> void:
 	for y in range(rect.position.y, rect.position.y + rect.size.y):
