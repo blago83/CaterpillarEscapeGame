@@ -2,6 +2,8 @@ extends Node3D
 ## 3D Caterpillar segment – cute cartoon style inspired by reference art.
 ## Plump overlapping body, big expressive eyes, antennae, rosy cheeks, tiny feet.
 
+const MouthComponent3DScript: GDScript = preload("res://scripts/mouth_component_3d.gd")
+
 const CELL := 1.0
 
 var _mesh: MeshInstance3D
@@ -23,6 +25,7 @@ var _is_blinking := false
 
 # ── Face expression ──
 var _mouth_node: Node3D
+var _mouth_component: Node3D
 var _cheek_nodes: Array[MeshInstance3D] = []
 var _eyebrow_nodes: Array[MeshInstance3D] = []
 var _face_time := 0.0
@@ -450,82 +453,21 @@ func _add_cheeks(head_radius: float, parent: Node3D) -> void:
 		_cheek_nodes.append(cheek)
 
 func _add_mouth(head_radius: float, parent: Node3D) -> void:
-	# Small open smile: dark cavity with a clearly visible pink tongue in front.
+	# Reference-style mouth: rounded upper lip, open dark cavity, twin tongue lobes.
 	var mouth_pivot := Node3D.new()
-	mouth_pivot.position = Vector3(0.0, head_radius * -0.32, -head_radius * 0.92)
-	mouth_pivot.scale = Vector3(1.0, 1.0, 1.0)
+	mouth_pivot.position = Vector3(0.0, head_radius * -0.30, -head_radius * 0.94)
+	mouth_pivot.scale = Vector3(0.74, 0.74, 0.74)
 	parent.add_child(mouth_pivot)
 
-	# Dark cavity – flattened ellipse, modest size.
-	var cavity_mat := StandardMaterial3D.new()
-	cavity_mat.albedo_color = Color(0.18, 0.05, 0.05)
-	cavity_mat.specular = 0.05
-	cavity_mat.roughness = 0.92
-
-	var cavity := MeshInstance3D.new()
-	var cavity_s := SphereMesh.new()
-	cavity_s.radius = 0.09
-	cavity_s.height = 0.10
-	cavity_s.radial_segments = 28
-	cavity_s.rings = 14
-	cavity.mesh = cavity_s
-	cavity.material_override = cavity_mat
-	cavity.position = Vector3(0.0, 0.0, 0.0)
-	# Wider than tall, very shallow → reads as an open mouth.
-	cavity.scale = Vector3(1.55, 1.35, 0.45)
-	cavity.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mouth_pivot.add_child(cavity)
-
-	# Thin flat upper lip strip across the top of the cavity (gives D-shape).
-	var lip_mat := StandardMaterial3D.new()
-	lip_mat.albedo_color = Color(0.62, 0.86, 0.25)
-	lip_mat.specular = 0.55
-	lip_mat.roughness = 0.34
-	var lip := MeshInstance3D.new()
-	var lip_s := BoxMesh.new()
-	lip_s.size = Vector3(0.30, 0.025, 0.06)
-	lip.mesh = lip_s
-	lip.material_override = lip_mat
-	lip.position = Vector3(0.0, 0.060, -0.01)
-	lip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mouth_pivot.add_child(lip)
-
-	# Pink tongue – sits in front of the cavity, lower half, clearly visible.
-	var tongue_mat := StandardMaterial3D.new()
-	tongue_mat.albedo_color = Color(0.96, 0.48, 0.50)
-	tongue_mat.specular = 0.7
-	tongue_mat.roughness = 0.28
-
-	var tongue := MeshInstance3D.new()
-	var tongue_s := SphereMesh.new()
-	tongue_s.radius = 0.06
-	tongue_s.height = 0.07
-	tongue_s.radial_segments = 20
-	tongue_s.rings = 10
-	tongue.mesh = tongue_s
-	tongue.material_override = tongue_mat
-	tongue.position = Vector3(0.0, -0.030, -0.005)
-	tongue.scale = Vector3(1.30, 0.90, 0.85)
-	tongue.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mouth_pivot.add_child(tongue)
-
-	# Tongue shine highlight.
-	var tongue_shine_mat := StandardMaterial3D.new()
-	tongue_shine_mat.albedo_color = Color(1.0, 0.92, 0.90, 0.6)
-	tongue_shine_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	tongue_shine_mat.specular = 1.0
-	tongue_shine_mat.roughness = 0.08
-	var tongue_shine := MeshInstance3D.new()
-	var tongue_shine_s := SphereMesh.new()
-	tongue_shine_s.radius = 0.018
-	tongue_shine_s.height = 0.010
-	tongue_shine.mesh = tongue_shine_s
-	tongue_shine.material_override = tongue_shine_mat
-	tongue_shine.position = Vector3(0.020, 0.012, -0.015)
-	tongue_shine.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	tongue.add_child(tongue_shine)
+	var mouth: Node3D = MouthComponent3DScript.new()
+	mouth.face_color = Color(0.62, 0.85, 0.28)
+	mouth.mouth_cavity_color = Color(0.19, 0.07, 0.04)
+	mouth.tongue_color = Color(0.96, 0.67, 0.56)
+	mouth.drool_enabled = false
+	mouth_pivot.add_child(mouth)
 
 	_mouth_node = mouth_pivot
+	_mouth_component = mouth
 	_mouth_base_scale = mouth_pivot.scale
 	_mouth_base_pos = mouth_pivot.position
 
@@ -709,6 +651,8 @@ func _process(delta: float) -> void:
 
 	# ── Mouth animation ──
 	if _mouth_node:
+		if _mouth_component and _mouth_component.has_method("set_expression"):
+			_mouth_component.set_expression(_expression)
 		match _expression:
 			"idle":
 				var breath := sin(_face_time * 1.5) * 0.05

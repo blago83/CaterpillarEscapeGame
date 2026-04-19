@@ -1,6 +1,7 @@
 extends Node3D
 
 const Segment3DScript := preload("res://scripts/segment_3d.gd")
+const MouthComponent3DScript: GDScript = preload("res://scripts/mouth_component_3d.gd")
 const BASE_CAM_OFFSET := Vector3(0.1, 7.2, 6.2)
 const MIN_ZOOM := 0.65
 const MAX_ZOOM := 1.6
@@ -29,6 +30,7 @@ func _ready() -> void:
 	_setup_lighting()
 	_setup_ground()
 	_spawn_player()
+	_spawn_mouth_preview()
 	_update_camera(true)
 	back_button.pressed.connect(_on_back_pressed)
 	reset_button.pressed.connect(_on_reset_pressed)
@@ -146,6 +148,56 @@ func _spawn_player() -> void:
 	if not _segments.is_empty() and _segments[0].has_method("set_idle"):
 		_segments[0].set_idle(true)
 
+func _spawn_mouth_preview() -> void:
+	var preview_root := Node3D.new()
+	preview_root.name = "MouthPreview"
+	preview_root.position = Vector3(-2.8, 0.70, 0.2)
+	preview_root.rotation_degrees = Vector3(55.0, 0.0, 0.0)
+	world_root.add_child(preview_root)
+
+	var face_back := MeshInstance3D.new()
+	var face_back_mesh := SphereMesh.new()
+	face_back_mesh.radius = 0.40
+	face_back_mesh.height = 0.26
+	face_back_mesh.radial_segments = 28
+	face_back_mesh.rings = 14
+	face_back.mesh = face_back_mesh
+	var face_back_mat := StandardMaterial3D.new()
+	face_back_mat.albedo_color = Color(0.62, 0.85, 0.28)
+	face_back_mat.specular = 0.45
+	face_back_mat.roughness = 0.50
+	face_back.material_override = face_back_mat
+	face_back.scale = Vector3(1.9, 1.25, 0.55)
+	face_back.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	preview_root.add_child(face_back)
+
+	var chin := MeshInstance3D.new()
+	var chin_mesh := SphereMesh.new()
+	chin_mesh.radius = 0.30
+	chin_mesh.height = 0.18
+	chin_mesh.radial_segments = 24
+	chin_mesh.rings = 12
+	chin.mesh = chin_mesh
+	var chin_mat := StandardMaterial3D.new()
+	chin_mat.albedo_color = Color(0.86, 0.86, 0.54)
+	chin_mat.specular = 0.30
+	chin_mat.roughness = 0.62
+	chin.material_override = chin_mat
+	chin.position = Vector3(0.0, -0.23, 0.07)
+	chin.scale = Vector3(1.45, 1.05, 0.45)
+	chin.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	preview_root.add_child(chin)
+
+	var mouth: Node3D = MouthComponent3DScript.new()
+	mouth.scale = Vector3(1.70, 1.70, 1.70)
+	mouth.face_color = Color(0.62, 0.85, 0.28)
+	mouth.mouth_cavity_color = Color(0.19, 0.07, 0.04)
+	mouth.tongue_color = Color(0.96, 0.67, 0.56)
+	mouth.drool_enabled = true
+	if mouth.has_method("set_expression"):
+		mouth.set_expression("idle")
+	preview_root.add_child(mouth)
+
 func _ensure_body_shadow() -> void:
 	if _body_shadow:
 		return
@@ -222,7 +274,7 @@ func _set_zoom(value: float) -> void:
 	_update_hud()
 
 func _update_hud() -> void:
-	info_label.text = "Level 0 Test Ground\nMove: arrows/WASD | Zoom: mouse wheel or +/-"
+	info_label.text = "Level 0 Test Ground\nMove: arrows/WASD | Zoom: mouse wheel or +/-\nMouth preview: left of the caterpillar"
 	zoom_label.text = "Zoom: %d%%" % int(round(_zoom * 100.0))
 
 func _on_back_pressed() -> void:
