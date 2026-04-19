@@ -66,14 +66,14 @@ void vertex() {
 	float dx = UV.x * 2.0 - 1.0;
 	float dy = UV.y * 2.0 - 1.0;
 
-	// Vertical bias: bottom pushed much harder into head
-	float vert_bias = mix(0.0, 0.08, UV.y * UV.y);
+	// Vertical bias: top (UV.y=0) sticks OUT like a nose, bottom (UV.y=1) tucks IN
+	float vert_bias = mix(-0.07, 0.13, UV.y * UV.y);
 	// Corner bias: corners pushed extra into head
 	float corner_bias = 0.04 * dx * dx * dy * dy;
 	// Horizontal edge bias: sides pushed in
 	float horiz_bias = 0.02 * dx * dx;
 
-	VERTEX.z = base_z + vert_bias + corner_bias + horiz_bias - 0.005;
+	VERTEX.z = base_z + vert_bias + corner_bias + horiz_bias;
 }
 
 void fragment() {
