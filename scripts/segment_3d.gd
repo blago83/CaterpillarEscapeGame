@@ -29,7 +29,7 @@ var _mouth_component: Node3D
 var _cheek_nodes: Array[MeshInstance3D] = []
 var _eyebrow_nodes: Array[MeshInstance3D] = []
 var _face_time := 0.0
-var _expression := "idle"  # idle, happy, looking, sleeping
+var _expression := "happy"  # happy, idle, looking, sleeping
 var _expression_timer := 0.0
 var _mouth_base_scale := Vector3(1.3, 0.6, 0.5)
 var _mouth_base_pos := Vector3.ZERO
@@ -506,13 +506,13 @@ func _add_cheeks(head_radius: float, parent: Node3D) -> void:
 	for side in [-1.0, 1.0]:
 		var cheek := MeshInstance3D.new()
 		var cheek_s := SphereMesh.new()
-		cheek_s.radius = 0.06
-		cheek_s.height = 0.04
+		cheek_s.radius = 0.065
+		cheek_s.height = 0.045
 		cheek_s.radial_segments = 12
 		cheek_s.rings = 6
 		cheek.mesh = cheek_s
 		cheek.material_override = cheek_mat
-		cheek.position = Vector3(side * 0.21, head_radius * 0.0, -head_radius * 0.72)
+		cheek.position = Vector3(side * 0.21, head_radius * -0.10, -head_radius * 0.72)
 		cheek.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		parent.add_child(cheek)
 		_cheek_nodes.append(cheek)
@@ -520,8 +520,8 @@ func _add_cheeks(head_radius: float, parent: Node3D) -> void:
 func _add_mouth(head_radius: float, parent: Node3D) -> void:
 	# Reference-style mouth: rounded upper lip, open dark cavity, twin tongue lobes.
 	var mouth_pivot := Node3D.new()
-	mouth_pivot.position = Vector3(0.0, head_radius * -0.30, -head_radius * 0.94)
-	mouth_pivot.scale = Vector3(0.74, 0.74, 0.74)
+	mouth_pivot.position = Vector3(0.0, head_radius * -0.55, -head_radius * 0.94)
+	mouth_pivot.scale = Vector3(0.92, 0.92, 0.92)
 	parent.add_child(mouth_pivot)
 
 	var mouth: Node3D = MouthComponent3DScript.new()
@@ -674,7 +674,7 @@ func _process(delta: float) -> void:
 					if _idle_cycle_timer >= IDLE_LOOK_DURATION:
 						_idle_phase = 2
 						_idle_cycle_timer = 0.0
-						_expression = "idle"
+						_expression = "happy"
 				2:  # Pause between looks
 					if _idle_cycle_timer >= IDLE_PAUSE:
 						_idle_phase = 1
@@ -708,11 +708,8 @@ func _process(delta: float) -> void:
 		for eye in _eye_nodes:
 			eye.scale.y = lerpf(eye.scale.y, 0.05, delta * 3.0)
 
-	# ── Expression timer (happy fades back to idle) ──
-	if _expression == "happy":
-		_expression_timer -= delta
-		if _expression_timer <= 0.0:
-			_expression = "idle"
+	# ── Expression timer (extra-happy fades back to default happy) ──
+	# No longer needed since happy IS the default — remove fade-out.
 
 	# ── Mouth animation ──
 	if _mouth_node:
@@ -720,22 +717,21 @@ func _process(delta: float) -> void:
 			_mouth_component.set_expression(_expression)
 		match _expression:
 			"idle":
-				var breath := sin(_face_time * 1.5) * 0.05
-				# Stay open & smiley by default.
-				var idle_scale := _mouth_base_scale * Vector3(1.05 + breath, 1.05, 1.0)
+				var breath := sin(_face_time * 1.5) * 0.03
+				var s := 1.0 + breath
+				var idle_scale := _mouth_base_scale * s
 				_mouth_node.scale = _mouth_node.scale.lerp(idle_scale, delta * 5.0)
 			"happy":
 				var t := clampf(_expression_timer, 0.0, 1.0)
-				var happy_scale := Vector3(2.0, 1.4, 0.8)
-				_mouth_node.scale = _mouth_node.scale.lerp(_mouth_base_scale.lerp(happy_scale, t), delta * 8.0)
+				var happy_scale := _mouth_base_scale * lerpf(1.0, 1.4, t)
+				_mouth_node.scale = _mouth_node.scale.lerp(happy_scale, delta * 8.0)
 			"looking":
-				var pulse := sin(_face_time * 2.0) * 0.05
-				var look_scale := _mouth_base_scale * Vector3(0.6 + pulse, 1.2, 0.8)
+				var pulse := sin(_face_time * 2.0) * 0.03
+				var look_scale := _mouth_base_scale * (0.85 + pulse)
 				_mouth_node.scale = _mouth_node.scale.lerp(look_scale, delta * 4.0)
 			"sleeping":
-				# Tiny slightly open mouth – slow breathing
-				var sleep_breath := sin(_face_time * 0.8) * 0.06
-				var sleep_scale := _mouth_base_scale * Vector3(0.5, 0.4 + sleep_breath, 0.5)
+				var sleep_breath := sin(_face_time * 0.8) * 0.04
+				var sleep_scale := _mouth_base_scale * (0.7 + sleep_breath)
 				_mouth_node.scale = _mouth_node.scale.lerp(sleep_scale, delta * 2.0)
 
 	# ── Eyebrow animation ──
@@ -895,7 +891,7 @@ func set_idle(idle: bool) -> void:
 		_idle_phase = 0
 		if _expression == "looking" or _expression == "sleeping":
 			_clear_zzz()
-			_expression = "idle"
+			_expression = "happy"
 
 func look_at_camera() -> void:
 	_expression = "looking"
@@ -903,7 +899,7 @@ func look_at_camera() -> void:
 func stop_looking() -> void:
 	if _expression == "looking" or _expression == "sleeping":
 		_clear_zzz()
-		_expression = "idle"
+		_expression = "happy"
 
 # ── Animation callbacks (API kept for level_3d.gd) ──
 
