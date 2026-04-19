@@ -58,15 +58,11 @@ func _ready() -> void:
 	match seg_type:
 		"head":
 			radius = 0.32
-			var head_mat := StandardMaterial3D.new()
-			head_mat.specular = 0.55
-			head_mat.roughness = 0.45
-			head_mat.metallic = 0.0
-			head_mat.rim_enabled = true
-			head_mat.rim = 0.5
-			head_mat.rim_tint = 0.3
-			head_mat.albedo_color = Color(0.62, 0.85, 0.28)
-			_mat = head_mat
+			_mat = _make_body_gradient_material(0, false)
+			# Override head colors to be slightly brighter
+			_mat.set_shader_parameter("mid_color", Color(0.68, 0.90, 0.18))
+			_mat.set_shader_parameter("specular_amt", 0.55)
+			_mat.set_shader_parameter("roughness_amt", 0.35)
 		"tail":
 			radius = 0.22
 			_mat = _make_body_gradient_material(seg_index, true)
@@ -122,9 +118,7 @@ func _ready() -> void:
 # ── Body details ──
 
 func _make_body_gradient_material(seg_index: int, is_tail := false) -> ShaderMaterial:
-	# Painted body shell matching the reference segment:
-	# dark green edge shading, bright lime center, subtle yellow belly glow,
-	# and integrated flat mottled spots baked into the material.
+	# Rich textured skin: multi-scale spots, bumpy surface, wet glossy look
 	var shader := Shader.new()
 	shader.code = """
 shader_type spatial;
@@ -134,26 +128,56 @@ uniform vec3 top_color        : source_color = vec3(0.20, 0.42, 0.08);
 uniform vec3 mid_color        : source_color = vec3(0.66, 0.88, 0.14);
 uniform vec3 bottom_color     : source_color = vec3(0.24, 0.52, 0.11);
 uniform vec3 belly_glow_color : source_color = vec3(0.44, 0.58, 0.12);
-uniform vec3 spot_color       : source_color = vec3(0.78, 0.92, 0.18);
+uniform vec3 spot_color_light : source_color = vec3(0.82, 0.96, 0.35);
+uniform vec3 spot_color_bright: source_color = vec3(0.92, 1.00, 0.55);
 uniform float mid_pos         = 0.52;
-uniform float specular_amt    = 0.60;
-uniform float roughness_amt   = 0.38;
-uniform float rim_amt         = 0.32;
+uniform float specular_amt    = 0.65;
+uniform float roughness_amt   = 0.30;
+uniform float rim_amt         = 0.38;
 uniform float seed            = 0.0;
 
 varying vec3 v_local_pos;
+varying vec3 v_local_normal;
 
 void vertex() {
 	v_local_pos = VERTEX;
+	v_local_normal = NORMAL;
 }
 
 float hash3(vec3 p) {
 	return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
 }
 
+float hash2(vec2 p) {
+	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+// Voronoi-based circular spots — returns (dist_to_nearest_center, random_id)
+vec2 voronoi(vec2 p, float scale) {
+	vec2 sp = p * scale;
+	vec2 cell = floor(sp);
+	vec2 local = fract(sp);
+	float min_dist = 10.0;
+	float cell_id = 0.0;
+	for (int y = -1; y <= 1; y++) {
+		for (int x = -1; x <= 1; x++) {
+			vec2 neighbor = vec2(float(x), float(y));
+			vec2 nc = cell + neighbor;
+			vec2 point = neighbor + vec2(hash2(nc), hash2(nc + 99.0)) * 0.8 + 0.1;
+			float d = length(local - point);
+			if (d < min_dist) {
+				min_dist = d;
+				cell_id = hash2(nc + 37.0);
+			}
+		}
+	}
+	return vec2(min_dist, cell_id);
+}
+
 void fragment() {
 	float t = clamp(v_local_pos.y * 1.55 + 0.52, 0.0, 1.0);
 
+	// Base gradient: bottom -> mid -> top
 	vec3 col;
 	if (t < mid_pos) {
 		float k = t / mid_pos;
@@ -163,42 +187,57 @@ void fragment() {
 		col = mix(mid_color, top_color, smoothstep(0.0, 1.0, k));
 	}
 
-	// Bright center mass like the painted reference, darker on the shell edges.
+	// Bright center mass
 	float radial = clamp(length(v_local_pos.xz) * 1.25, 0.0, 1.0);
 	float center_light = 1.0 - smoothstep(0.10, 0.95, radial);
-	col = mix(col, mid_color * 1.08, center_light * 0.18);
+	col = mix(col, mid_color * 1.12, center_light * 0.22);
 
-	// Thin belly band, positioned a bit higher on the lower half.
+	// Belly band
 	float belly_mask = smoothstep(0.06, -0.24, v_local_pos.y);
 	belly_mask *= 1.0 - smoothstep(0.08, 0.58, length(v_local_pos.xz) * 1.7);
 	col = mix(col, belly_glow_color, belly_mask * 0.14);
 
-	// Large soft painted spots.
-	vec3 large_grid = vec3(7.0, 5.0, 7.0);
-	vec3 large_p = v_local_pos * large_grid + vec3(seed * 0.013, seed * 0.009, seed * 0.011);
-	vec3 large_cell = floor(large_p);
-	vec3 large_local = fract(large_p) - 0.5;
-	float large_rand = hash3(large_cell);
-	float large_shape = length(vec2(large_local.x * (1.55 + hash3(large_cell + 3.1)), large_local.z * (1.00 + hash3(large_cell + 7.7))));
-	float large_spot = (1.0 - smoothstep(0.16, 0.33, large_shape)) * step(0.66, large_rand);
+	// --- Multi-scale voronoi spots (like dewdrops / skin bumps) ---
+	vec2 surf_uv = v_local_pos.xz + vec2(seed * 0.013, seed * 0.009);
 
-	// Tiny mottled flecks between the larger spots.
-	vec3 small_grid = vec3(16.0, 12.0, 16.0);
-	vec3 small_p = v_local_pos * small_grid + vec3(seed * 0.021);
-	vec3 small_cell = floor(small_p);
-	vec3 small_local = fract(small_p) - 0.5;
-	float small_rand = hash3(small_cell + 11.3);
-	float small_shape = length(small_local.xz * (1.2 + small_rand));
-	float small_spot = (1.0 - smoothstep(0.05, 0.14, small_shape)) * step(0.76, small_rand);
+	// Large spots (like the big bright circles in the reference)
+	vec2 v_large = voronoi(surf_uv, 8.0);
+	float large_spot = (1.0 - smoothstep(0.08, 0.22, v_large.x)) * step(0.45, v_large.y);
+	// Medium spots
+	vec2 v_med = voronoi(surf_uv + vec2(seed * 0.007), 15.0);
+	float med_spot = (1.0 - smoothstep(0.06, 0.18, v_med.x)) * step(0.40, v_med.y);
+	// Small spots (tiny freckles)
+	vec2 v_small = voronoi(surf_uv + vec2(seed * 0.019), 28.0);
+	float small_spot = (1.0 - smoothstep(0.04, 0.12, v_small.x)) * step(0.50, v_small.y);
 
-	float spot_mask = smoothstep(0.10, 0.92, t) * (large_spot * 0.55 + small_spot * 0.30);
-	col = mix(col, spot_color, clamp(spot_mask, 0.0, 1.0));
+	// Combine spots with varying brightness
+	float spot_total = large_spot * 0.7 + med_spot * 0.45 + small_spot * 0.25;
+	// Spots are brighter on top, subtler on bottom
+	spot_total *= smoothstep(0.05, 0.70, t);
+	// Mix bright yellow-green spots
+	vec3 spot_col = mix(spot_color_light, spot_color_bright, large_spot);
+	col = mix(col, spot_col, clamp(spot_total, 0.0, 0.65));
+
+	// --- Subtle surface bump / noise for organic texture ---
+	float noise_fine = hash3(v_local_pos * 45.0 + vec3(seed));
+	float noise_coarse = hash3(v_local_pos * 12.0 + vec3(seed * 0.5));
+	col *= 0.95 + noise_fine * 0.08 + noise_coarse * 0.04;
+
+	// --- Wet/dewy highlights on spot centers ---
+	float wet_highlight = large_spot * 0.35 + med_spot * 0.15;
+	float wet_spec_boost = wet_highlight * 0.3;
 
 	ALBEDO = col;
-	SPECULAR = specular_amt;
-	ROUGHNESS = roughness_amt;
+	SPECULAR = specular_amt + wet_spec_boost;
+	ROUGHNESS = roughness_amt - wet_highlight * 0.12;
 	RIM = rim_amt;
 	RIM_TINT = 0.22;
+
+	// Subtle normal perturbation for bumpy skin feel
+	float bump_str = 0.04;
+	float bx = hash3(v_local_pos * 30.0 + vec3(0.1, 0.0, 0.0) + vec3(seed)) - 0.5;
+	float by = hash3(v_local_pos * 30.0 + vec3(0.0, 0.1, 0.0) + vec3(seed)) - 0.5;
+	NORMAL = normalize(NORMAL + vec3(bx, by, 0.0) * bump_str);
 }
 """
 	var mat := ShaderMaterial.new()
@@ -214,7 +253,8 @@ void fragment() {
 		mat.set_shader_parameter("mid_color", Color(0.64 + v * 0.02, 0.88, 0.14 + v * 0.015))
 		mat.set_shader_parameter("bottom_color", Color(0.24, 0.52, 0.11))
 	mat.set_shader_parameter("belly_glow_color", Color(0.44, 0.58, 0.12))
-	mat.set_shader_parameter("spot_color", Color(0.80, 0.93, 0.20))
+	mat.set_shader_parameter("spot_color_light", Color(0.82, 0.96, 0.35))
+	mat.set_shader_parameter("spot_color_bright", Color(0.92, 1.00, 0.55))
 	mat.set_shader_parameter("mid_pos", 0.52)
 	mat.set_shader_parameter("seed", float(seg_index) * 17.0)
 	return mat
@@ -369,51 +409,81 @@ func _add_spots(radius: float) -> void:
 # ── Head features ──
 
 func _add_eyes(head_radius: float, parent: Node3D) -> void:
-	# Large expressive eyes – brown iris with big pupil and sparkly highlights
+	# Large glossy almond-shaped eyes – golden-brown iris, wet/dewy look
 	var eye_white_mat := StandardMaterial3D.new()
-	eye_white_mat.albedo_color = Color(1.0, 1.0, 1.0)
-	eye_white_mat.specular = 0.4
-	eye_white_mat.roughness = 0.3
+	eye_white_mat.albedo_color = Color(1.0, 1.0, 0.98)
+	eye_white_mat.specular = 0.7
+	eye_white_mat.roughness = 0.15
+	eye_white_mat.rim_enabled = true
+	eye_white_mat.rim = 0.2
+	eye_white_mat.rim_tint = 0.1
 
 	var iris_mat := StandardMaterial3D.new()
-	iris_mat.albedo_color = Color(0.45, 0.25, 0.10)  # Warm brown
-	iris_mat.specular = 0.5
-	iris_mat.roughness = 0.3
+	iris_mat.albedo_color = Color(0.12, 0.08, 0.04)  # Dark brown, almost black
+	iris_mat.specular = 0.8
+	iris_mat.roughness = 0.12
+	iris_mat.rim_enabled = true
+	iris_mat.rim = 0.25
+	iris_mat.rim_tint = 0.15
 
 	var pupil_mat := StandardMaterial3D.new()
 	pupil_mat.albedo_color = Color(0.02, 0.02, 0.02)
+	pupil_mat.specular = 0.9
+	pupil_mat.roughness = 0.05
 
 	var highlight_mat := StandardMaterial3D.new()
 	highlight_mat.albedo_color = Color(1.0, 1.0, 1.0)
 	highlight_mat.emission_enabled = true
-	highlight_mat.emission = Color(0.8, 0.8, 0.8)
-	highlight_mat.emission_energy_multiplier = 0.3
+	highlight_mat.emission = Color(1.0, 1.0, 0.95)
+	highlight_mat.emission_energy_multiplier = 0.5
+
+	# Outer golden rim around each eye for that warm glow
+	var rim_mat := StandardMaterial3D.new()
+	rim_mat.albedo_color = Color(0.85, 0.65, 0.10, 0.7)
+	rim_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	rim_mat.specular = 0.6
+	rim_mat.roughness = 0.25
 
 	for side in [-1.0, 1.0]:
-		# White of the eye – smaller, cute
+		# White of the eye – almond shaped (squashed sphere)
 		var eye := MeshInstance3D.new()
 		var eye_s := SphereMesh.new()
-		eye_s.radius = 0.09
+		eye_s.radius = 0.10
 		eye_s.height = 0.18
 		eye_s.radial_segments = 24
 		eye_s.rings = 12
 		eye.mesh = eye_s
 		eye.material_override = eye_white_mat
 		eye.position = Vector3(side * 0.13, head_radius * 0.10, -head_radius * 0.78)
+		# Slightly pointed/almond shape by scaling
+		eye.scale = Vector3(0.85, 1.0, 0.9)
 		eye.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		parent.add_child(eye)
 		_eye_nodes.append(eye)
 
-		# Brown iris
+		# Golden outer rim glow
+		var rim_mesh := MeshInstance3D.new()
+		var rim_s := SphereMesh.new()
+		rim_s.radius = 0.105
+		rim_s.height = 0.19
+		rim_s.radial_segments = 20
+		rim_s.rings = 10
+		rim_mesh.mesh = rim_s
+		rim_mesh.material_override = rim_mat
+		rim_mesh.scale = Vector3(1.0, 1.0, 0.5)
+		rim_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		eye.add_child(rim_mesh)
+
+		# Golden-brown iris – large and prominent
 		var iris := MeshInstance3D.new()
 		var iris_s := SphereMesh.new()
-		iris_s.radius = 0.065
-		iris_s.height = 0.07
+		iris_s.radius = 0.072
+		iris_s.height = 0.08
 		iris_s.radial_segments = 20
 		iris_s.rings = 10
 		iris.mesh = iris_s
 		iris.material_override = iris_mat
-		iris.position = Vector3(side * 0.005, 0.040, -0.05)
+		iris.position = Vector3(side * 0.005, 0.035, -0.055)
 		iris.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		eye.add_child(iris)
 
@@ -430,34 +500,34 @@ func _add_eyes(head_radius: float, parent: Node3D) -> void:
 		pupil.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		iris.add_child(pupil)
 
-		# Large highlight
+		# Large glossy highlight – wet/dewy
 		var hl := MeshInstance3D.new()
 		var hl_s := SphereMesh.new()
-		hl_s.radius = 0.025
-		hl_s.height = 0.028
+		hl_s.radius = 0.028
+		hl_s.height = 0.032
 		hl_s.radial_segments = 8
 		hl_s.rings = 4
 		hl.mesh = hl_s
 		hl.material_override = highlight_mat
-		hl.position = Vector3(-side * 0.02, 0.025, -0.025)
+		hl.position = Vector3(-side * 0.02, 0.028, -0.028)
 		hl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		iris.add_child(hl)
 
 		# Small secondary highlight
 		var hl2 := MeshInstance3D.new()
 		var hl2_s := SphereMesh.new()
-		hl2_s.radius = 0.01
-		hl2_s.height = 0.014
+		hl2_s.radius = 0.012
+		hl2_s.height = 0.016
 		hl2.mesh = hl2_s
 		hl2.material_override = highlight_mat
-		hl2.position = Vector3(side * 0.015, -0.015, -0.025)
+		hl2.position = Vector3(side * 0.015, -0.015, -0.028)
 		hl2.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		iris.add_child(hl2)
 
 func _add_eyebrows(head_radius: float, parent: Node3D) -> void:
 	# Small curved eyebrow arcs above each eye
 	var brow_mat := StandardMaterial3D.new()
-	brow_mat.albedo_color = Color(0.30, 0.55, 0.12)
+	brow_mat.albedo_color = Color(0.12, 0.08, 0.04)
 	brow_mat.specular = 0.1
 	brow_mat.roughness = 0.8
 
@@ -532,22 +602,41 @@ func _add_antennae(head_radius: float) -> void:
 	tip_mat.roughness = 0.4
 
 	for side in [-1.0, 1.0]:
-		# Stalk (thin cylinder, angled outward) – tall & visible
-		var stalk := MeshInstance3D.new()
-		var cyl := CylinderMesh.new()
-		cyl.top_radius = 0.03
-		cyl.bottom_radius = 0.04
-		cyl.height = 0.45
-		cyl.radial_segments = 8
-		stalk.mesh = cyl
-		stalk.material_override = stalk_mat
-		stalk.position = Vector3(side * 0.10, head_radius * 0.90, -head_radius * 0.10)
-		stalk.rotation.z = side * -0.40  # Angle outward
-		stalk.rotation.x = -0.10  # Slight forward tilt
-		stalk.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_mesh.add_child(stalk)
+		# Build antenna from multiple small segments that curve forward
+		# like a fishing rod bending under a heavy fish
+		var base := Node3D.new()
+		base.position = Vector3(side * 0.10, head_radius * 1.05, head_radius * 0.0)
+		base.rotation.z = side * -0.30  # Slight outward angle
+		_mesh.add_child(base)
 
-		# Yellow ball tip – big and round
+		var segments := 6
+		var seg_height := 0.09
+		var current_parent := base
+		for i in range(segments):
+			var seg_node := Node3D.new()
+			seg_node.position = Vector3(0.0, seg_height, 0.0)
+			# Each segment tilts forward more — accelerating curve like a fishing rod
+			var bend := -0.12 - float(i) * 0.08
+			seg_node.rotation.x = bend
+			current_parent.add_child(seg_node)
+
+			var seg_mesh := MeshInstance3D.new()
+			var cyl := CylinderMesh.new()
+			# Taper from thick base to thin tip
+			var t := float(i) / float(segments)
+			cyl.bottom_radius = lerpf(0.04, 0.02, t)
+			cyl.top_radius = lerpf(0.035, 0.015, t)
+			cyl.height = seg_height
+			cyl.radial_segments = 8
+			seg_mesh.mesh = cyl
+			seg_mesh.material_override = stalk_mat
+			seg_mesh.position = Vector3(0.0, -seg_height * 0.5, 0.0)
+			seg_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			seg_node.add_child(seg_mesh)
+
+			current_parent = seg_node
+
+		# Yellow ball tip at the end of the curved antenna
 		var tip := MeshInstance3D.new()
 		var tip_s := SphereMesh.new()
 		tip_s.radius = 0.10
@@ -556,9 +645,9 @@ func _add_antennae(head_radius: float) -> void:
 		tip_s.rings = 8
 		tip.mesh = tip_s
 		tip.material_override = tip_mat
-		tip.position = Vector3(0.0, 0.26, 0.0)
+		tip.position = Vector3(0.0, 0.02, 0.0)
 		tip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		stalk.add_child(tip)
+		current_parent.add_child(tip)
 
 # ── Tail ──
 
