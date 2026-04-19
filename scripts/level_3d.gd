@@ -7,8 +7,8 @@ const BUSH_TOP := Color(0.40, 0.62, 0.10)
 const BUSH_BOTTOM := Color(0.12, 0.35, 0.07)
 
 # Camera offset from the look-at target (gives that ~-52°, -32° perspective feel)
-const CAM_OFFSET := Vector3(7.0, 9.0, 7.5)
-const CAM_FOV := 38.0
+const CAM_OFFSET := Vector3(0.1, 9.0, 7.5)
+const CAM_FOV := 54.0
 
 const Segment3DScript := preload("res://scripts/segment_3d.gd")
 const Leaf3DScript := preload("res://scripts/leaf_3d.gd")
@@ -162,6 +162,9 @@ var _diag_timer := 0.0
 var _move_count := 0
 var _frame_count := 0
 var _p_was_pressed := false
+var _idle_timer := 0.0
+const IDLE_LOOK_DELAY := 3.0  # seconds before caterpillar looks at camera
+var _is_looking_at_camera := false
 
 @onready var cam: Camera3D = $Camera3D
 @onready var maze_layer: Node3D = $MazeLayer
@@ -867,6 +870,13 @@ func _process(delta: float) -> void:
 		if i < _segment_target_rots.size():
 			segment_nodes[i].rotation.y = lerp_angle(segment_nodes[i].rotation.y, _segment_target_rots[i], lerp_speed)
 
+	# ── Idle detection: tell head segment it's idle ──
+	_idle_timer += delta
+	if _idle_timer >= IDLE_LOOK_DELAY and not _is_looking_at_camera:
+		_is_looking_at_camera = true
+		if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_idle"):
+			segment_nodes[0].set_idle(true)
+
 	var dir := _get_held_dir()
 	if dir == Vector2i.ZERO:
 		move_timer = 0.0
@@ -882,6 +892,12 @@ func _process(delta: float) -> void:
 func _try_move(dir: Vector2i) -> void:
 	if is_busy:
 		return
+	# Reset idle on any movement
+	_idle_timer = 0.0
+	if _is_looking_at_camera:
+		_is_looking_at_camera = false
+		if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_idle"):
+			segment_nodes[0].set_idle(false)
 	var reverse_dir := -facing
 	if dir == reverse_dir:
 		_move_backward()
@@ -954,6 +970,8 @@ func _move_backward() -> void:
 		leaves[lead_cell].queue_free()
 		leaves.erase(lead_cell)
 		leaves_left -= 1
+		if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_expression"):
+			segment_nodes[0].set_expression("happy", 1.2)
 		# Grow from the head side (opposite of travel direction)
 		var head_dir: Vector2i
 		if n > 1:
@@ -1008,6 +1026,8 @@ func _move_to(target: Vector2i) -> void:
 		leaves[target].queue_free()
 		leaves.erase(target)
 		leaves_left -= 1
+		if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_expression"):
+			segment_nodes[0].set_expression("happy", 1.2)
 		var new_cell: Vector2i = prev[-1]
 		segment_cells.append(new_cell)
 		var node := Node3D.new()
