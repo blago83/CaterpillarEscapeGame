@@ -349,7 +349,7 @@ func _add_eyes(head_radius: float, parent: Node3D) -> void:
 		eye_s.rings = 12
 		eye.mesh = eye_s
 		eye.material_override = eye_white_mat
-		eye.position = Vector3(side * 0.13, head_radius * 0.05, -head_radius * 0.78)
+		eye.position = Vector3(side * 0.13, head_radius * 0.10, -head_radius * 0.78)
 		eye.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		parent.add_child(eye)
 		_eye_nodes.append(eye)
@@ -363,7 +363,7 @@ func _add_eyes(head_radius: float, parent: Node3D) -> void:
 		iris_s.rings = 10
 		iris.mesh = iris_s
 		iris.material_override = iris_mat
-		iris.position = Vector3(side * 0.01, -0.015, -0.05)
+		iris.position = Vector3(side * 0.005, 0.040, -0.05)
 		iris.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		eye.add_child(iris)
 
@@ -420,9 +420,9 @@ func _add_eyebrows(head_radius: float, parent: Node3D) -> void:
 		brow_s.rings = 4
 		brow.mesh = brow_s
 		brow.material_override = brow_mat
-		brow.position = Vector3(side * 0.15, head_radius * 0.28, -head_radius * 0.82)
-		brow.scale = Vector3(1.0, 1.0, 0.5)
-		brow.rotation.z = side * -0.15  # Slight arch angle
+		brow.position = Vector3(side * 0.15, head_radius * 0.40, -head_radius * 0.82)
+		brow.scale = Vector3(1.2, 0.7, 0.5)
+		brow.rotation.z = side * -0.45  # Stronger arch → happier
 		brow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		parent.add_child(brow)
 		_eyebrow_nodes.append(brow)
@@ -472,7 +472,7 @@ func _add_mouth(head_radius: float, parent: Node3D) -> void:
 	cavity.material_override = cavity_mat
 	cavity.position = Vector3(0.0, 0.0, 0.0)
 	# Wider than tall, very shallow → reads as an open mouth.
-	cavity.scale = Vector3(1.55, 0.95, 0.40)
+	cavity.scale = Vector3(1.55, 1.35, 0.45)
 	cavity.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mouth_pivot.add_child(cavity)
 
@@ -486,7 +486,7 @@ func _add_mouth(head_radius: float, parent: Node3D) -> void:
 	lip_s.size = Vector3(0.30, 0.025, 0.06)
 	lip.mesh = lip_s
 	lip.material_override = lip_mat
-	lip.position = Vector3(0.0, 0.045, -0.01)
+	lip.position = Vector3(0.0, 0.060, -0.01)
 	lip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mouth_pivot.add_child(lip)
 
@@ -504,8 +504,8 @@ func _add_mouth(head_radius: float, parent: Node3D) -> void:
 	tongue_s.rings = 10
 	tongue.mesh = tongue_s
 	tongue.material_override = tongue_mat
-	tongue.position = Vector3(0.0, -0.020, -0.045)
-	tongue.scale = Vector3(1.30, 0.85, 1.10)
+	tongue.position = Vector3(0.0, -0.030, -0.005)
+	tongue.scale = Vector3(1.30, 0.90, 0.85)
 	tongue.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mouth_pivot.add_child(tongue)
 
@@ -521,7 +521,7 @@ func _add_mouth(head_radius: float, parent: Node3D) -> void:
 	tongue_shine_s.height = 0.010
 	tongue_shine.mesh = tongue_shine_s
 	tongue_shine.material_override = tongue_shine_mat
-	tongue_shine.position = Vector3(0.020, 0.012, -0.040)
+	tongue_shine.position = Vector3(0.020, 0.012, -0.015)
 	tongue_shine.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	tongue.add_child(tongue_shine)
 
@@ -711,9 +711,10 @@ func _process(delta: float) -> void:
 	if _mouth_node:
 		match _expression:
 			"idle":
-				var breath := sin(_face_time * 1.5) * 0.15
-				var target_scale := _mouth_base_scale + Vector3(breath, breath * 0.4, 0.0)
-				_mouth_node.scale = _mouth_node.scale.lerp(target_scale, delta * 5.0)
+				var breath := sin(_face_time * 1.5) * 0.05
+				# Stay open & smiley by default.
+				var idle_scale := _mouth_base_scale * Vector3(1.05 + breath, 1.05, 1.0)
+				_mouth_node.scale = _mouth_node.scale.lerp(idle_scale, delta * 5.0)
 			"happy":
 				var t := clampf(_expression_timer, 0.0, 1.0)
 				var happy_scale := Vector3(2.0, 1.4, 0.8)
@@ -734,7 +735,7 @@ func _process(delta: float) -> void:
 		var side := -1.0 if i == 0 else 1.0
 		match _expression:
 			"idle":
-				brow.rotation.z = lerpf(brow.rotation.z, side * -0.15, delta * 3.0)
+				brow.rotation.z = lerpf(brow.rotation.z, side * -0.45, delta * 3.0)
 			"happy":
 				brow.rotation.z = lerpf(brow.rotation.z, side * -0.25, delta * 6.0)
 			"looking":
