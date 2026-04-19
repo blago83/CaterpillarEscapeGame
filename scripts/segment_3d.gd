@@ -10,6 +10,9 @@ var _foot_left: MeshInstance3D
 var _foot_right: MeshInstance3D
 var _leg_phase := 0.0
 var _base_mesh_y := 0.30
+var _crawl_blend := 0.0
+var _crawl_phase := 0.0
+var _crawl_speed := 0.0
 
 # ── Blink ──
 var _eye_nodes: Array[MeshInstance3D] = []
@@ -634,9 +637,22 @@ func _add_feet(seg_radius: float, is_small: bool) -> void:
 # ── Blink & expression animation ──
 
 func _process(delta: float) -> void:
-	if _eye_nodes.is_empty():
-		return
 	_face_time += delta
+
+	# Smooth crawl bob on every segment while moving.
+	if _crawl_blend > 0.001:
+		_crawl_phase += delta * _crawl_speed
+		_crawl_blend = maxf(_crawl_blend - delta * 1.35, 0.0)
+	else:
+		_crawl_speed = 0.0
+	var crawl_wave := sin(_crawl_phase)
+	var crawl_lift := crawl_wave * 0.065 * _crawl_blend
+	if _mesh:
+		_mesh.position.y = lerpf(_mesh.position.y, _base_mesh_y + crawl_lift, delta * 10.0)
+	if _foot_left and _foot_right:
+		var foot_slide := crawl_wave * 0.06 * _crawl_blend
+		_foot_left.position.z = lerpf(_foot_left.position.z, -0.02 + foot_slide, delta * 10.0)
+		_foot_right.position.z = lerpf(_foot_right.position.z, -0.02 - foot_slide, delta * 10.0)
 
 	# ── Idle behavior state machine ──
 	if _is_idle:
@@ -667,7 +683,7 @@ func _process(delta: float) -> void:
 						_expression = "looking"
 
 	# ── Blink (not while sleeping) ──
-	if _expression != "sleeping":
+	if not _eye_nodes.is_empty() and _expression != "sleeping":
 		if _is_blinking:
 			_blink_phase += delta * 8.0
 			var t: float
@@ -688,7 +704,7 @@ func _process(delta: float) -> void:
 			if _blink_timer >= _blink_interval:
 				_is_blinking = true
 				_blink_phase = 0.0
-	else:
+	elif not _eye_nodes.is_empty():
 		# Eyes closed while sleeping
 		for eye in _eye_nodes:
 			eye.scale.y = lerpf(eye.scale.y, 0.05, delta * 3.0)
@@ -889,15 +905,11 @@ func stop_looking() -> void:
 
 # ── Animation callbacks (API kept for level_3d.gd) ──
 
-func wiggle_legs() -> void:
-	if not _foot_left or not _foot_right:
-		return
+func wiggle_legs(speed_scale := 1.0) -> void:
 	_leg_phase += 1.0
-	var dir := 1.0 if fmod(_leg_phase, 2.0) < 1.0 else -1.0
-	_foot_left.position.z = -0.02 + dir * 0.03
-	_foot_right.position.z = -0.02 - dir * 0.03
-	if _mesh:
-		_mesh.position.y = _base_mesh_y + 0.015 * dir
+	_crawl_phase += PI * 0.55
+	_crawl_speed = 9.0 * speed_scale
+	_crawl_blend = 1.0
 
 func update_direction(_is_horizontal: bool) -> void:
 	pass

@@ -145,9 +145,14 @@ var leaves_left: int = 0
 var is_busy: bool = false
 var swipe_start := Vector2.ZERO
 var move_timer: float = 0.0
-const MOVE_REPEAT_DELAY := 0.15
-const REVERSE_REPEAT_DELAY := 0.3
+const MOVE_REPEAT_DELAY := 0.22
+const REVERSE_REPEAT_DELAY := 1.20
+const FORWARD_MOVE_DURATION := 0.34
+const REVERSE_MOVE_DURATION := 0.68
 var _is_reversing: bool = false
+var _move_anim_remaining := 0.0
+var _allow_busy_release := true
+var _crawl_motion_time := 0.0
 
 var _maze_w: int = 0
 var _maze_h: int = 0
@@ -784,16 +789,10 @@ func _update_taper() -> void:
 		var s := 1.0
 		if i == 0:
 			s = 1.0
-		elif i == 1:
-			s = 0.85
 		elif i == n - 1:
 			s = 0.7
 		else:
-			var body_i := i - 2
-			if body_i < 3:
-				s = 0.95 + 0.05 * float(body_i)
-			else:
-				s = 1.1
+			s = 1.0
 		segment_nodes[i].scale = Vector3(s, s, s)
 
 # ── Input ──
@@ -906,15 +905,30 @@ func _process(delta: float) -> void:
 	# Smooth segment interpolation
 	var lerp_speed: float
 	if _is_reversing:
-		lerp_speed = minf(delta * 8.0, 1.0)
+		lerp_speed = minf(delta * 5.0, 1.0)
 	else:
-		lerp_speed = minf(delta * 14.0, 1.0)
+		lerp_speed = minf(delta * 8.0, 1.0)
+	var crawl_alpha := 0.0
+	if _move_anim_remaining > 0.0:
+		_crawl_motion_time += delta * (5.0 if _is_reversing else 7.0)
+		var anim_duration := REVERSE_MOVE_DURATION if _is_reversing else FORWARD_MOVE_DURATION
+		crawl_alpha = sin(clampf((1.0 - (_move_anim_remaining / anim_duration)) * PI, 0.0, PI))
 	for i in segment_nodes.size():
 		if i < _segment_targets.size():
-			segment_nodes[i].position = segment_nodes[i].position.lerp(_segment_targets[i], lerp_speed)
+			var target_pos := _segment_targets[i]
+			if crawl_alpha > 0.0:
+				var phase := _crawl_motion_time - float(i) * 0.85
+				var amp := 0.13 if i > 0 and i < segment_nodes.size() - 1 else 0.08
+				target_pos.y += sin(phase) * amp * crawl_alpha
+			segment_nodes[i].position = segment_nodes[i].position.lerp(target_pos, lerp_speed)
 		if i < _segment_target_rots.size():
 			segment_nodes[i].rotation.y = lerp_angle(segment_nodes[i].rotation.y, _segment_target_rots[i], lerp_speed)
 	_update_body_shadow()
+
+	if _move_anim_remaining > 0.0:
+		_move_anim_remaining = maxf(_move_anim_remaining - delta, 0.0)
+		if _move_anim_remaining <= 0.0 and _allow_busy_release:
+			is_busy = false
 
 	# ── Idle detection: tell head segment it's idle ──
 	_idle_timer += delta
@@ -937,7 +951,11 @@ func _process(delta: float) -> void:
 
 func _try_move(dir: Vector2i) -> void:
 	if is_busy:
-		return
+		if not _allow_busy_release:
+			return
+		# Allow smooth continuous crawling only when continuing forward in the same direction.
+		if _move_anim_remaining > 0.0 and (_is_reversing or dir != facing):
+			return
 	# Reset idle on any movement
 	_idle_timer = 0.0
 	if _is_looking_at_camera:
@@ -962,6 +980,7 @@ func _try_move(dir: Vector2i) -> void:
 func _move_backward() -> void:
 	_is_reversing = true
 	is_busy = true
+	_allow_busy_release = true
 	_move_count += 1
 
 	# Tail leads: find a free cell adjacent to the tail to extend into
@@ -1040,22 +1059,25 @@ func _move_backward() -> void:
 		_segment_target_rots = _calc_target_rotations()
 	_update_taper()
 	for sn in segment_nodes:
-		sn.wiggle_legs()
+		sn.wiggle_legs(0.65)
+	_move_anim_remaining = REVERSE_MOVE_DURATION
 
 	if hazards.has(lead_cell):
+		_allow_busy_release = false
 		await _lose()
 		return
 	if leaves_left <= 0 and exit_node:
 		exit_node.set_meta("open", true)
 	if lead_cell == exit_cell and leaves_left <= 0:
+		_allow_busy_release = false
 		await _win()
 		return
 
 	_update_hud()
-	is_busy = false
 
 func _move_to(target: Vector2i) -> void:
 	is_busy = true
+	_allow_busy_release = true
 	_move_count += 1
 	var prev := segment_cells.duplicate()
 	segment_cells[0] = target
@@ -1090,19 +1112,21 @@ func _move_to(target: Vector2i) -> void:
 		_segment_target_rots = _calc_target_rotations()
 	_update_taper()
 	for n in segment_nodes:
-		n.wiggle_legs()
+		n.wiggle_legs(1.0)
+	_move_anim_remaining = FORWARD_MOVE_DURATION
 
 	if hazards.has(target):
+		_allow_busy_release = false
 		await _lose()
 		return
 	if leaves_left <= 0 and exit_node:
 		exit_node.set_meta("open", true)
 	if target == exit_cell and leaves_left <= 0:
+		_allow_busy_release = false
 		await _win()
 		return
 
 	_update_hud()
-	is_busy = false
 
 func _bump() -> void:
 	pass
