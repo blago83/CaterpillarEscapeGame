@@ -450,13 +450,13 @@ func _add_cheeks(head_radius: float, parent: Node3D) -> void:
 		_cheek_nodes.append(cheek)
 
 func _add_mouth(head_radius: float, parent: Node3D) -> void:
-	# Wide D-shaped open smile (flat top, round bottom) with a pink tongue inside.
+	# Small open smile: dark cavity with a clearly visible pink tongue in front.
 	var mouth_pivot := Node3D.new()
-	mouth_pivot.position = Vector3(0.0, head_radius * -0.28, -head_radius * 0.84)
+	mouth_pivot.position = Vector3(0.0, head_radius * -0.32, -head_radius * 0.92)
 	mouth_pivot.scale = Vector3(1.0, 1.0, 1.0)
 	parent.add_child(mouth_pivot)
 
-	# Dark cavity: very wide flattened sphere -> looks like a wide round opening.
+	# Dark cavity – flattened ellipse, modest size.
 	var cavity_mat := StandardMaterial3D.new()
 	cavity_mat.albedo_color = Color(0.18, 0.05, 0.05)
 	cavity_mat.specular = 0.05
@@ -464,66 +464,64 @@ func _add_mouth(head_radius: float, parent: Node3D) -> void:
 
 	var cavity := MeshInstance3D.new()
 	var cavity_s := SphereMesh.new()
-	cavity_s.radius = 0.13
-	cavity_s.height = 0.20
-	cavity_s.radial_segments = 32
-	cavity_s.rings = 16
+	cavity_s.radius = 0.09
+	cavity_s.height = 0.10
+	cavity_s.radial_segments = 28
+	cavity_s.rings = 14
 	cavity.mesh = cavity_s
 	cavity.material_override = cavity_mat
-	cavity.position = Vector3(0.0, -0.02, -0.03)
-	# Stretch wide horizontally, moderate vertically, shallow depth.
-	cavity.scale = Vector3(2.05, 1.25, 0.48)
+	cavity.position = Vector3(0.0, 0.0, 0.0)
+	# Wider than tall, very shallow → reads as an open mouth.
+	cavity.scale = Vector3(1.55, 0.95, 0.40)
 	cavity.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mouth_pivot.add_child(cavity)
 
-	# Flat top mask covers the upper half of the cavity to make a D shape.
-	var mask_mat := StandardMaterial3D.new()
-	mask_mat.albedo_color = Color(0.66, 0.89, 0.27)
-	mask_mat.specular = 0.55
-	mask_mat.roughness = 0.34
-	var mask := MeshInstance3D.new()
-	var mask_s := BoxMesh.new()
-	# Wide enough to cover the full cavity width, tall enough to clip the top half.
-	mask_s.size = Vector3(0.62, 0.16, 0.10)
-	mask.mesh = mask_s
-	mask.material_override = mask_mat
-	mask.position = Vector3(0.0, 0.082, 0.0)
-	mask.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mouth_pivot.add_child(mask)
+	# Thin flat upper lip strip across the top of the cavity (gives D-shape).
+	var lip_mat := StandardMaterial3D.new()
+	lip_mat.albedo_color = Color(0.62, 0.86, 0.25)
+	lip_mat.specular = 0.55
+	lip_mat.roughness = 0.34
+	var lip := MeshInstance3D.new()
+	var lip_s := BoxMesh.new()
+	lip_s.size = Vector3(0.30, 0.025, 0.06)
+	lip.mesh = lip_s
+	lip.material_override = lip_mat
+	lip.position = Vector3(0.0, 0.045, -0.01)
+	lip.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mouth_pivot.add_child(lip)
 
-	# Pink tongue filling the lower half of the opening.
+	# Pink tongue – sits in front of the cavity, lower half, clearly visible.
 	var tongue_mat := StandardMaterial3D.new()
-	tongue_mat.albedo_color = Color(0.95, 0.50, 0.50)
-	tongue_mat.specular = 0.65
-	tongue_mat.roughness = 0.30
+	tongue_mat.albedo_color = Color(0.96, 0.48, 0.50)
+	tongue_mat.specular = 0.7
+	tongue_mat.roughness = 0.28
 
 	var tongue := MeshInstance3D.new()
 	var tongue_s := SphereMesh.new()
-	tongue_s.radius = 0.10
-	tongue_s.height = 0.10
-	tongue_s.radial_segments = 24
-	tongue_s.rings = 12
+	tongue_s.radius = 0.06
+	tongue_s.height = 0.07
+	tongue_s.radial_segments = 20
+	tongue_s.rings = 10
 	tongue.mesh = tongue_s
 	tongue.material_override = tongue_mat
-	# Wide and a bit flattened, sitting in the lower half, pushed forward so it pokes out.
-	tongue.position = Vector3(0.0, -0.045, 0.025)
-	tongue.scale = Vector3(1.55, 0.95, 1.10)
+	tongue.position = Vector3(0.0, -0.020, -0.045)
+	tongue.scale = Vector3(1.30, 0.85, 1.10)
 	tongue.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mouth_pivot.add_child(tongue)
 
-	# Subtle highlight on the tongue.
+	# Tongue shine highlight.
 	var tongue_shine_mat := StandardMaterial3D.new()
-	tongue_shine_mat.albedo_color = Color(1.0, 0.92, 0.90, 0.55)
+	tongue_shine_mat.albedo_color = Color(1.0, 0.92, 0.90, 0.6)
 	tongue_shine_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	tongue_shine_mat.specular = 1.0
 	tongue_shine_mat.roughness = 0.08
 	var tongue_shine := MeshInstance3D.new()
 	var tongue_shine_s := SphereMesh.new()
-	tongue_shine_s.radius = 0.028
-	tongue_shine_s.height = 0.014
+	tongue_shine_s.radius = 0.018
+	tongue_shine_s.height = 0.010
 	tongue_shine.mesh = tongue_shine_s
 	tongue_shine.material_override = tongue_shine_mat
-	tongue_shine.position = Vector3(0.025, 0.020, -0.012)
+	tongue_shine.position = Vector3(0.020, 0.012, -0.040)
 	tongue_shine.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	tongue.add_child(tongue_shine)
 
