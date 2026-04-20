@@ -682,19 +682,34 @@ func _ensure_body_shadow() -> void:
 	if _body_shadow:
 		return
 	_body_shadow = MeshInstance3D.new()
-	var mesh := SphereMesh.new()
-	mesh.radius = 0.55
-	mesh.height = 0.08
-	mesh.radial_segments = 24
-	mesh.rings = 8
+	var mesh := QuadMesh.new()
+	mesh.size = Vector2(1.0, 1.0)
 	_body_shadow.mesh = mesh
-	var shadow_mat := StandardMaterial3D.new()
-	shadow_mat.albedo_color = Color(0.0, 0.0, 0.0, 0.14)
-	shadow_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	shadow_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	shadow_mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
-	shadow_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_body_shadow.rotation.x = -PI * 0.5  # lay flat on ground
+	var shadow_mat := ShaderMaterial.new()
 	shadow_mat.render_priority = -1
+	var shader := Shader.new()
+	shader.code = """
+shader_type spatial;
+render_mode blend_mix, depth_draw_opaque, cull_disabled, unshaded, shadows_disabled;
+
+uniform float corner_radius = 0.15;
+
+void fragment() {
+	// UV 0..1 -> centered -0.5..0.5
+	vec2 p = UV - 0.5;
+	// Rounded rectangle SDF
+	vec2 d = abs(p) - (vec2(0.5) - vec2(corner_radius));
+	float sdf = length(max(d, vec2(0.0))) + min(max(d.x, d.y), 0.0) - corner_radius;
+	// Soft edge falloff
+	float alpha = 1.0 - smoothstep(-0.06, 0.02, sdf);
+	// Fade at edges for natural look
+	alpha *= 0.16;
+	ALBEDO = vec3(0.0);
+	ALPHA = alpha;
+}
+"""
+	shadow_mat.shader = shader
 	_body_shadow.material_override = shadow_mat
 	_body_shadow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	cat_layer.add_child(_body_shadow)
@@ -713,11 +728,13 @@ func _update_body_shadow() -> void:
 	var head_pos := segment_nodes[0].position
 	var tail_pos := segment_nodes[-1].position
 	var spine := head_pos - tail_pos
-	var length := maxf(spine.length() + 1.0, 2.4)
+	var length := maxf(spine.length() + 0.8, 2.0)
+	var width := 0.75
 	var yaw := atan2(spine.x, spine.z)
 	_body_shadow.position = Vector3(center.x, 0.03, center.z)
-	_body_shadow.rotation = Vector3(0.0, yaw, 0.0)
-	_body_shadow.scale = Vector3(1.2, 0.18, length)
+	# Quad is rotated flat (-90 on X), so we scale X=width, Y=length
+	_body_shadow.rotation = Vector3(-PI * 0.5, 0.0, -yaw)
+	_body_shadow.scale = Vector3(width, length, 1.0)
 
 func _calc_positions() -> Array[Vector3]:
 	var spacing := CELL * 0.30

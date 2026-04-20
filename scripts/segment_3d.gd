@@ -57,9 +57,11 @@ func _ready() -> void:
 	var radius: float
 	match seg_type:
 		"head":
-			radius = 0.32
+			radius = 0.34
 			_mat = _make_body_gradient_material(0, false)
 			_mat.set_shader_parameter("show_stripes", false)
+			_mat.set_shader_parameter("pear_shape", 1.0)
+			_mat.set_shader_parameter("segment_radius", 0.34)
 			# Override head colors to be slightly brighter
 			_mat.set_shader_parameter("mid_color", Color(0.68, 0.90, 0.18))
 			_mat.set_shader_parameter("specular_amt", 0.55)
@@ -73,8 +75,11 @@ func _ready() -> void:
 
 	var sphere := SphereMesh.new()
 	sphere.radius = radius
-	# Slightly squashed for that plump caterpillar look
-	sphere.height = radius * 1.75
+	# Head is taller (egg-shaped) for pear deformation; body/tail squashed
+	if seg_type == "head":
+		sphere.height = radius * 2.1
+	else:
+		sphere.height = radius * 1.75
 	sphere.radial_segments = 32
 	sphere.rings = 16
 	_mesh.mesh = sphere
@@ -138,11 +143,35 @@ uniform float rim_amt         = 0.38;
 uniform float seed            = 0.0;
 uniform bool show_stripes      = true;
 uniform float segment_radius   = 0.28;
+uniform float pear_shape       = 0.0;
 
 varying vec3 v_local_pos;
 varying vec3 v_local_normal;
 
 void vertex() {
+	// Pear deformation: big round forehead, narrow tapered chin
+	if (pear_shape > 0.0) {
+		float h = VERTEX.y;
+		// Normalize height: 0 at very bottom, 1 at very top of sphere
+		float sphere_h = segment_radius * 1.75 * 0.5; // half-height of sphere
+		float hn = clamp((h / sphere_h) * 0.5 + 0.5, 0.0, 1.0);
+		// Strong pear curve: wide forehead, narrow chin
+		float top_scale = 1.30;
+		float mid_scale = 1.10;
+		float bot_scale = 0.55;
+		float s;
+		if (hn > 0.5) {
+			s = mix(mid_scale, top_scale, smoothstep(0.5, 1.0, hn));
+		} else {
+			s = mix(bot_scale, mid_scale, smoothstep(0.0, 0.5, hn));
+		}
+		s = mix(1.0, s, pear_shape);
+		VERTEX.x *= s;
+		VERTEX.z *= s;
+		NORMAL.x *= 1.0 / s;
+		NORMAL.z *= 1.0 / s;
+		NORMAL = normalize(NORMAL);
+	}
 	v_local_pos = VERTEX;
 	v_local_normal = NORMAL;
 }
@@ -620,13 +649,13 @@ func _add_cheeks(head_radius: float, parent: Node3D) -> void:
 	for side in [-1.0, 1.0]:
 		var cheek := MeshInstance3D.new()
 		var cheek_s := SphereMesh.new()
-		cheek_s.radius = 0.065
-		cheek_s.height = 0.045
-		cheek_s.radial_segments = 12
-		cheek_s.rings = 6
+		cheek_s.radius = 0.075
+		cheek_s.height = 0.050
+		cheek_s.radial_segments = 14
+		cheek_s.rings = 8
 		cheek.mesh = cheek_s
 		cheek.material_override = cheek_mat
-		cheek.position = Vector3(side * 0.21, head_radius * -0.10, -head_radius * 0.72)
+		cheek.position = Vector3(side * 0.20, head_radius * -0.08, -head_radius * 0.68)
 		cheek.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		parent.add_child(cheek)
 		_cheek_nodes.append(cheek)
@@ -634,7 +663,7 @@ func _add_cheeks(head_radius: float, parent: Node3D) -> void:
 func _add_mouth(head_radius: float, parent: Node3D) -> void:
 	# Reference-style mouth: rounded upper lip, open dark cavity, twin tongue lobes.
 	var mouth_pivot := Node3D.new()
-	mouth_pivot.position = Vector3(0.0, head_radius * -0.55, -head_radius * 0.94)
+	mouth_pivot.position = Vector3(0.0, head_radius * -0.45, -head_radius * 1.18)
 	mouth_pivot.scale = Vector3(0.72, 0.72, 0.72)
 	parent.add_child(mouth_pivot)
 
@@ -643,6 +672,7 @@ func _add_mouth(head_radius: float, parent: Node3D) -> void:
 	mouth.mouth_cavity_color = Color(0.19, 0.07, 0.04)
 	mouth.tongue_color = Color(0.96, 0.67, 0.56)
 	mouth.drool_enabled = false
+	mouth.sphere_radius = head_radius * 1.4
 	mouth_pivot.add_child(mouth)
 
 	_mouth_node = mouth_pivot
@@ -1086,10 +1116,16 @@ func update_seg_type(new_type: String) -> void:
 		return
 	match new_type:
 		"head":
-			sphere.radius = 0.32
-			sphere.height = 0.56
-			_mat = _make_head_material()
-			_base_mesh_y = 0.32 * 0.85
+			sphere.radius = 0.34
+			sphere.height = 0.34 * 2.1
+			_mat = _make_body_gradient_material(0, false)
+			_mat.set_shader_parameter("show_stripes", false)
+			_mat.set_shader_parameter("pear_shape", 1.0)
+			_mat.set_shader_parameter("segment_radius", 0.34)
+			_mat.set_shader_parameter("mid_color", Color(0.68, 0.90, 0.18))
+			_mat.set_shader_parameter("specular_amt", 0.55)
+			_mat.set_shader_parameter("roughness_amt", 0.35)
+			_base_mesh_y = 0.34 * 0.85 + 0.34 * 0.16
 			_mesh.position.y = _base_mesh_y
 		"tail":
 			sphere.radius = 0.22
