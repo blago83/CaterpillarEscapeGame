@@ -635,7 +635,7 @@ func _add_mouth(head_radius: float, parent: Node3D) -> void:
 	# Reference-style mouth: rounded upper lip, open dark cavity, twin tongue lobes.
 	var mouth_pivot := Node3D.new()
 	mouth_pivot.position = Vector3(0.0, head_radius * -0.55, -head_radius * 0.94)
-	mouth_pivot.scale = Vector3(0.92, 0.92, 0.92)
+	mouth_pivot.scale = Vector3(0.72, 0.72, 0.72)
 	parent.add_child(mouth_pivot)
 
 	var mouth: Node3D = MouthComponent3DScript.new()

@@ -785,6 +785,16 @@ func _calc_target_rotations() -> Array[float]:
 	for i in segment_cells.size():
 		var dir := _seg_dir(i)
 		var angle := _dir_angle_y(dir)
+
+		# At a turn, the segment between two different directions gets a 45° blend
+		if i > 0 and i < segment_cells.size() - 1:
+			var dir_ahead := _seg_dir(i - 1)
+			var dir_behind := _seg_dir(i + 1)
+			if dir_ahead != Vector2i.ZERO and dir_behind != Vector2i.ZERO and dir_ahead != dir_behind:
+				var a1 := _dir_angle_y(dir_ahead)
+				var a2 := _dir_angle_y(dir_behind)
+				angle = lerp_angle(a1, a2, 0.5)
+
 		rots.append(angle)
 	return rots
 
