@@ -59,6 +59,7 @@ func _ready() -> void:
 		"head":
 			radius = 0.32
 			_mat = _make_body_gradient_material(0, false)
+			_mat.set_shader_parameter("show_stripes", false)
 			# Override head colors to be slightly brighter
 			_mat.set_shader_parameter("mid_color", Color(0.68, 0.90, 0.18))
 			_mat.set_shader_parameter("specular_amt", 0.55)
@@ -135,6 +136,8 @@ uniform float specular_amt    = 0.65;
 uniform float roughness_amt   = 0.30;
 uniform float rim_amt         = 0.38;
 uniform float seed            = 0.0;
+uniform bool show_stripes      = true;
+uniform float segment_radius   = 0.28;
 
 varying vec3 v_local_pos;
 varying vec3 v_local_normal;
@@ -223,6 +226,61 @@ void fragment() {
 	float noise_coarse = hash3(v_local_pos * 12.0 + vec3(seed * 0.5));
 	col *= 0.95 + noise_fine * 0.08 + noise_coarse * 0.04;
 
+	// --- Black stripes with yellow spots (swallowtail pattern) ---
+	if (show_stripes) {
+		// Position-based mapping for clean perpendicular rings
+		float z_n = v_local_pos.z / segment_radius;
+		float ang = atan(v_local_pos.x, v_local_pos.y);
+
+		// Wide band region — yellow spots will fill most of it
+		float wobble = (hash2(vec2(ang * 2.0 + seed, z_n * 3.0)) - 0.5) * 0.04
+		            + (hash2(vec2(ang * 5.0 + seed * 1.3, z_n * 7.0)) - 0.5) * 0.025;
+		float half_width = 0.28 + wobble;
+		float band_mask = 1.0 - smoothstep(half_width - 0.06, half_width + 0.04, abs(z_n));
+
+		// Soften on belly side
+		float belly_fade = smoothstep(-0.15, 0.10, v_local_pos.y);
+		band_mask *= mix(0.15, 1.0, belly_fade);
+
+		// Shadow at edges of band
+		float shadow_zone = 1.0 - smoothstep(half_width - 0.10, half_width + 0.06, abs(z_n));
+		float shadow_only = max(shadow_zone - band_mask, 0.0);
+		col = mix(col, col * 0.65, shadow_only * 0.4);
+
+		// Yellow spots: huge round blobs filling most of the band
+		float n_spots = 7.0;
+		float spot_ang = mod(ang + PI + seed * 0.1, TAU);
+		float spot_cell = spot_ang / TAU * n_spots;
+		float spot_frac = fract(spot_cell);
+		float spot_cell_id = floor(spot_cell);
+		// Use raw world-space coords scaled to make spots huge
+		float circ_span = TAU / n_spots * segment_radius; // world-space width per cell
+		float dx_spot = (spot_frac - 0.5) * circ_span;
+		float dy_spot = v_local_pos.z; // raw z position in world units
+		// Per-spot random properties
+		float rnd = hash2(vec2(spot_cell_id, seed));
+		float rnd2 = hash2(vec2(spot_cell_id + 7.0, seed + 3.0));
+		float rnd3 = hash2(vec2(spot_cell_id + 13.0, seed + 5.0));
+		dx_spot += (rnd - 0.5) * 0.02;
+		dy_spot += (rnd3 - 0.5) * 0.02;
+		// Huge radius in world units
+		float spot_r = 0.06 + rnd2 * 0.03; // 0.06 to 0.09 (body radius is 0.28)
+		// Gentle wobble for organic feel
+		float edge_ang = atan(dx_spot, dy_spot);
+		float wobble_spot = 1.0 + (hash2(vec2(edge_ang * 3.0 + spot_cell_id, seed)) - 0.5) * 0.12;
+		float spot_dist = length(vec2(dx_spot, dy_spot)) / wobble_spot;
+		float yellow_mask = 1.0 - smoothstep(spot_r * 0.3, spot_r, spot_dist);
+		yellow_mask *= band_mask;
+
+		// Dark stripe color blends with green
+		vec3 stripe_dark = mix(col * 0.15, vec3(0.04, 0.08, 0.02), 0.7);
+		vec3 yellow_spot = vec3(0.95, 0.85, 0.12);
+
+		// First paint the whole band dark, then paint yellow spots on top
+		col = mix(col, stripe_dark, band_mask * 0.80);
+		col = mix(col, yellow_spot, yellow_mask * 0.92);
+	}
+
 	// --- Wet/dewy highlights on spot centers ---
 	float wet_highlight = large_spot * 0.35 + med_spot * 0.15;
 	float wet_spec_boost = wet_highlight * 0.3;
@@ -257,6 +315,10 @@ void fragment() {
 	mat.set_shader_parameter("spot_color_bright", Color(0.92, 1.00, 0.55))
 	mat.set_shader_parameter("mid_pos", 0.52)
 	mat.set_shader_parameter("seed", float(seg_index) * 17.0)
+	if is_tail:
+		mat.set_shader_parameter("segment_radius", 0.22)
+	else:
+		mat.set_shader_parameter("segment_radius", 0.28)
 	return mat
 
 func _add_belly_stripe(radius: float, seg_type: String) -> void:
@@ -680,8 +742,13 @@ func _add_feet(seg_radius: float, is_small: bool) -> void:
 	foot_mat.specular = 0.2
 	foot_mat.roughness = 0.7
 
-	var foot_r := 0.05 if is_small else 0.06
+	var foot_r := 0.07 if is_small else 0.085
 	var spread := seg_radius * 0.75
+
+	var dot_mat := StandardMaterial3D.new()
+	dot_mat.albedo_color = Color(0.04, 0.04, 0.02)
+	dot_mat.specular = 0.1
+	dot_mat.roughness = 0.8
 
 	for side_data in [[-1.0, "_foot_left"], [1.0, "_foot_right"]]:
 		var side: float = side_data[0]
@@ -696,6 +763,22 @@ func _add_feet(seg_radius: float, is_small: bool) -> void:
 		foot.position = Vector3(side * spread, -seg_radius * 0.75, -0.02)
 		foot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_mesh.add_child(foot)
+
+		# Black spots on each foot
+		for d in range(2):
+			var dot := MeshInstance3D.new()
+			var dot_s := SphereMesh.new()
+			var dot_r := 0.055
+			dot_s.radius = dot_r
+			dot_s.height = dot_r * 0.5
+			dot_s.radial_segments = 10
+			dot_s.rings = 6
+			dot.mesh = dot_s
+			dot.material_override = dot_mat
+			var dz := -0.01 + float(d) * 0.045
+			dot.position = Vector3(side * foot_r * 0.3, foot_r * 0.25, dz)
+			dot.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			foot.add_child(dot)
 
 		if side < 0:
 			_foot_left = foot

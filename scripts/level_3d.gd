@@ -761,25 +761,39 @@ func _seg_type(i: int) -> String:
 		return "tail"
 	return "body"
 
+func _seg_dir(i: int) -> Vector2i:
+	## Return the direction segment i should face.
+	## Falls back to the segment ahead or `facing` when cells overlap.
+	if i == 0:
+		return facing
+	var dir := segment_cells[i - 1] - segment_cells[i]
+	if dir != Vector2i.ZERO:
+		return dir
+	# Overlapping cells – inherit direction from the segment ahead
+	for j in range(i - 1, -1, -1):
+		var d: Vector2i
+		if j == 0:
+			d = facing
+		else:
+			d = segment_cells[j - 1] - segment_cells[j]
+		if d != Vector2i.ZERO:
+			return d
+	return facing
+
 func _calc_target_rotations() -> Array[float]:
 	var rots: Array[float] = []
 	for i in segment_cells.size():
-		var dir: Vector2i
-		if i == 0:
-			dir = facing
-		else:
-			dir = segment_cells[i - 1] - segment_cells[i]
-		rots.append(_dir_angle_y(dir))
+		var dir := _seg_dir(i)
+		var angle := _dir_angle_y(dir)
+		rots.append(angle)
 	return rots
 
 func _update_rotations_instant() -> void:
+	var target_rots := _calc_target_rotations()
 	for i in segment_nodes.size():
-		var dir: Vector2i
-		if i == 0:
-			dir = facing
-		else:
-			dir = segment_cells[i - 1] - segment_cells[i]
-		segment_nodes[i].rotation.y = _dir_angle_y(dir)
+		if i < target_rots.size():
+			segment_nodes[i].rotation.y = target_rots[i]
+		var dir := _seg_dir(i)
 		var is_horizontal := (dir == Vector2i.LEFT or dir == Vector2i.RIGHT)
 		segment_nodes[i].update_direction(is_horizontal)
 
