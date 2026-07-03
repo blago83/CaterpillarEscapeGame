@@ -182,12 +182,13 @@ var _bite_timer := 0.0           # countdown for current bite
 var _is_biting := false
 var _wall_mm_inst: MultiMeshInstance3D = null
 var _lump_mm_inst: MultiMeshInstance3D = null
-var _bite_marks: Array[Node3D] = []  # visual bite mark nodes
-var _bitten_bush_nodes: Dictionary = {}   # cell -> MeshInstance3D (individual shrinking bush)
+var _bite_marks: Array[Node3D] = []  # legacy bite visual nodes
+var _bitten_bush_nodes: Dictionary = {}   # cell -> Node3D (individual bitten bush root)
 var _bitten_bush_hscale: Dictionary = {}  # cell -> float (original h_scale)
 var _cell_wall_index: Dictionary = {}     # cell -> int index in wall MultiMesh
 var _cell_wall_scales: Dictionary = {}    # cell -> Vector2 (w_scale, h_scale) from MM build
 var _cell_lump_range: Dictionary = {}     # cell -> Vector2i (lump start, end) in lump MultiMesh
+var _bite_cavity_mat: StandardMaterial3D = null
 
 # ── Sounds ──
 var _snd_move: AudioStreamPlayer
@@ -1394,6 +1395,18 @@ func _start_bite() -> void:
 	_is_biting = true
 	_bite_timer = BITE_DURATION
 	is_busy = true
+
+	# Apply the bite immediately on press, then keep chewing animation/sound.
+	if not _bite_count.has(_bite_target):
+		_bite_count[_bite_target] = 0
+	_bite_count[_bite_target] += 1
+	_apply_bush_bite_visual(_bite_target, _bite_count[_bite_target])
+	if _bite_count[_bite_target] >= BITES_TO_EAT:
+		if _snd_eat:
+			_snd_eat.play()
+		_eat_wall(_bite_target)
+		_bite_count.erase(_bite_target)
+
 	# Chomp! – play the full bite.wav (pitch fixed so duration stays ~6 s)
 	if _snd_bite:
 		_snd_bite.pitch_scale = 1.0
@@ -1416,25 +1429,114 @@ func _process_bite(delta: float) -> void:
 func _finish_bite() -> void:
 	_is_biting = false
 	is_busy = false
-	if not _bite_count.has(_bite_target):
-		_bite_count[_bite_target] = 0
-	_bite_count[_bite_target] += 1
-	# Add a visual bite mark on the bush
-	_apply_bush_bite_visual(_bite_target, _bite_count[_bite_target])
-	if _bite_count[_bite_target] >= BITES_TO_EAT:
-		# Satisfying gulp
-		if _snd_eat:
-			_snd_eat.play()
-		_eat_wall(_bite_target)
-		_bite_count.erase(_bite_target)
+
+func _ensure_bite_cavity_material() -> StandardMaterial3D:
+	if _bite_cavity_mat:
+		return _bite_cavity_mat
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.30, 0.19, 0.10)
+	mat.roughness = 0.96
+	mat.specular = 0.02
+	_bite_cavity_mat = mat
+	return _bite_cavity_mat
+
+func _make_bitten_bush(cell: Vector2i) -> Node3D:
+	var wall_pos := _pos(cell)
+	var scales: Vector2 = _cell_wall_scales.get(cell, Vector2(1.0, 1.0))
+	var root := CSGCombiner3D.new()
+	root.position = Vector3(wall_pos.x, WALL_HEIGHT * 0.5 * scales.y, wall_pos.z)
+	root.scale = Vector3(scales.x, scales.y, scales.x)
+	root.use_collision = false
+
+	var body := CSGBox3D.new()
+	body.size = Vector3(CELL, WALL_HEIGHT, CELL)
+	body.material = _wall_mat
+	root.add_child(body)
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = cell.x * 2003 + cell.y * 917
+	var top_lumps := rng.randi_range(3, 5)
+	for _i in top_lumps:
+		var lump := CSGSphere3D.new()
+		lump.radius = rng.randf_range(0.16, 0.24)
+		lump.material = _wall_mat
+		lump.position = Vector3(
+			rng.randf_range(-0.28, 0.28),
+			WALL_HEIGHT * 0.42 + rng.randf_range(-0.05, 0.10),
+			rng.randf_range(-0.28, 0.28))
+		lump.scale = Vector3(
+			rng.randf_range(0.9, 1.2),
+			rng.randf_range(0.75, 1.05),
+			rng.randf_range(0.9, 1.2))
+		root.add_child(lump)
+
+	maze_layer.add_child(root)
+	return root
+
+
+func _add_bite_cut_sphere(parent: Node3D, cut_pos: Vector3, radius: float, scale_vec: Vector3) -> void:
+	var cut := CSGSphere3D.new()
+	cut.operation = CSGShape3D.OPERATION_SUBTRACTION
+	cut.radius = radius
+	cut.position = cut_pos
+	cut.scale = scale_vec
+	cut.material = _ensure_bite_cavity_material()
+	parent.add_child(cut)
+
+func _add_bite_cutout(bush_root: Node3D, dir_to_head: Vector3, side_dir: Vector3, bite_num: int, cell: Vector2i) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = cell.x * 1013 + cell.y * 379 + bite_num * 53
+	var base_forward := 0.34 - float(bite_num - 1) * 0.03
+	var base_center := dir_to_head * base_forward + Vector3(0.0, 0.16 - float(bite_num - 1) * 0.01, 0.0)
+	base_center += side_dir * rng.randf_range(-0.03, 0.03)
+
+	# Large 3-circle "apple bite" silhouette. One stage should read as roughly one third removed.
+	var stage_scale := 1.0 + float(bite_num - 1) * 0.22
+	_add_bite_cut_sphere(
+		bush_root,
+		base_center + side_dir * -0.15 + Vector3(0.0, 0.10, 0.0),
+		0.23 * stage_scale,
+		Vector3(1.18, 1.02, 1.30))
+	_add_bite_cut_sphere(
+		bush_root,
+		base_center + side_dir * 0.15 + Vector3(0.0, 0.10, 0.0),
+		0.23 * stage_scale,
+		Vector3(1.18, 1.02, 1.30))
+	_add_bite_cut_sphere(
+		bush_root,
+		base_center + Vector3(0.0, -0.05, 0.0),
+		0.28 * stage_scale,
+		Vector3(1.22, 0.98, 1.38))
+
+	# Extra interior scoop makes the bite look deeper and more visible from the camera.
+	_add_bite_cut_sphere(
+		bush_root,
+		base_center - dir_to_head * (0.03 + float(bite_num - 1) * 0.02) + Vector3(0.0, 0.02, 0.0),
+		0.20 * stage_scale,
+		Vector3(0.95, 0.85, 1.35))
+
+	# Slight irregularity so it is not a perfect cookie-cutter bite.
+	var jag_count := 2 + bite_num
+	for _i in jag_count:
+		_add_bite_cut_sphere(
+			bush_root,
+			base_center \
+				+ side_dir * rng.randf_range(-0.18, 0.18) \
+				+ Vector3(0.0, rng.randf_range(-0.10, 0.12), 0.0) \
+				+ dir_to_head * rng.randf_range(-0.02, 0.08),
+			rng.randf_range(0.05, 0.09) * stage_scale,
+			Vector3(
+				rng.randf_range(0.8, 1.25),
+				rng.randf_range(0.75, 1.10),
+				rng.randf_range(0.9, 1.35)))
 
 func _apply_bush_bite_visual(cell: Vector2i, bite_num: int) -> void:
-	var wall_pos := _pos(cell)
+	var old_bush: Node3D = _bitten_bush_nodes.get(cell)
 	var head_pos := _pos(segment_cells[0])
-	var dir_to_head := (head_pos - wall_pos).normalized()
+	var dir_to_head := (head_pos - _pos(cell)).normalized()
 	var side_dir := Vector3(-dir_to_head.z, 0.0, dir_to_head.x)
 
-	# ── First bite: detach cell from MultiMesh, spawn individual shrinkable node ──
+	# First bite: detach cell from MultiMesh, spawn a standalone bush we can carve.
 	if bite_num == 1 and not _bitten_bush_nodes.has(cell):
 		var wall_idx: int = _cell_wall_index.get(cell, -1)
 		if wall_idx >= 0 and _wall_mm_inst and _wall_mm_inst.multimesh:
@@ -1445,64 +1547,15 @@ func _apply_bush_bite_visual(cell: Vector2i, bite_num: int) -> void:
 			for li in range(lr.x, lr.y):
 				_lump_mm_inst.multimesh.set_instance_transform(li,
 					Transform3D(Basis.IDENTITY, Vector3(0.0, -9999.0, 0.0)))
-		var scales: Vector2 = _cell_wall_scales.get(cell, Vector2(1.0, 1.0))
-		var bush := MeshInstance3D.new()
-		bush.mesh = _wall_mesh
-		bush.material_override = _wall_mat
-		bush.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-		bush.scale = Vector3(scales.x, scales.y, scales.x)
-		bush.position = Vector3(wall_pos.x, WALL_HEIGHT * 0.5 * scales.y, wall_pos.z)
-		maze_layer.add_child(bush)
-		_bitten_bush_nodes[cell] = bush
-		_bitten_bush_hscale[cell] = scales.y
+		_bitten_bush_hscale[cell] = _cell_wall_scales.get(cell, Vector2(1.0, 1.0)).y
 
-	# ── Shrink bush by 1/3 per bite (only for bites 1 and 2; bite 3 handled by _eat_wall) ──
-	var bush_node: MeshInstance3D = _bitten_bush_nodes.get(cell)
-	if bush_node and is_instance_valid(bush_node) and bite_num < BITES_TO_EAT:
-		var h_orig: float = _bitten_bush_hscale.get(cell, 1.0)
-		var fraction := 1.0 - float(bite_num) / float(BITES_TO_EAT)
-		var target_sy := h_orig * fraction
-		var target_py := WALL_HEIGHT * 0.5 * target_sy
-		var tw := create_tween()
-		tw.set_parallel(true)
-		tw.tween_property(bush_node, "scale:y", target_sy, 0.4) \
-			.set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
-		tw.tween_property(bush_node, "position:y", target_py, 0.4) \
-			.set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
+	if old_bush and is_instance_valid(old_bush):
+		old_bush.queue_free()
 
-	# ── Bite hole: cluster of irregular dark blobs embedded in the bush face ──
-	var rng := RandomNumberGenerator.new()
-	rng.seed = cell.x * 1000 + cell.y * 100 + bite_num * 37
-	var n_blobs := rng.randi_range(4, 6)
-	for _i in n_blobs:
-		var blob := MeshInstance3D.new()
-		var bm := SphereMesh.new()
-		var r := rng.randf_range(0.07, 0.17)
-		bm.radius = r
-		bm.height = r * rng.randf_range(0.8, 2.2)
-		bm.radial_segments = 6
-		bm.rings = 4
-		blob.mesh = bm
-		var bmat := StandardMaterial3D.new()
-		bmat.albedo_color = Color(
-			rng.randf_range(0.08, 0.20),
-			rng.randf_range(0.05, 0.12),
-			rng.randf_range(0.01, 0.04))
-		bmat.roughness = 0.95
-		bmat.specular = 0.02
-		blob.material_override = bmat
-		blob.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		var up_offset := rng.randf_range(0.04, 0.28)
-		var side_offset := rng.randf_range(-0.22, 0.22)
-		var face_depth := rng.randf_range(0.28, 0.46)
-		blob.position = wall_pos + dir_to_head * face_depth \
-			+ Vector3(0.0, up_offset, 0.0) + side_dir * side_offset
-		blob.rotation = Vector3(
-			rng.randf_range(-0.9, 0.9),
-			rng.randf_range(-0.9, 0.9),
-			rng.randf_range(-0.9, 0.9))
-		maze_layer.add_child(blob)
-		_bite_marks.append(blob)
+	var bush_node := _make_bitten_bush(cell)
+	_bitten_bush_nodes[cell] = bush_node
+	for stage in range(1, bite_num + 1):
+		_add_bite_cutout(bush_node, dir_to_head, side_dir, stage, cell)
 
 func _eat_wall(cell: Vector2i) -> void:
 	# Remove from game logic
@@ -1516,15 +1569,16 @@ func _eat_wall(cell: Vector2i) -> void:
 		_lump_mm_inst.queue_free()
 		_lump_mm_inst = null
 	# Flatten the individual bush to a near-zero stump so it persists as a ground marker
-	var bush_node: MeshInstance3D = _bitten_bush_nodes.get(cell)
+	var bush_node: Node3D = _bitten_bush_nodes.get(cell)
 	if bush_node and is_instance_valid(bush_node):
+		var h_orig: float = _bitten_bush_hscale.get(cell, 1.0)
 		var tw := create_tween()
 		tw.set_parallel(true)
 		tw.tween_property(bush_node, "scale:y", 0.04, 0.3) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-		tw.tween_property(bush_node, "position:y", WALL_HEIGHT * 0.02, 0.3) \
+		tw.tween_property(bush_node, "position:y", WALL_HEIGHT * 0.02 * h_orig, 0.3) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	# Keep bite hole blobs on the ground as remnant markers – do NOT free them
+	# Legacy bite-mark nodes are no longer used for the primary effect.
 	_bite_marks.clear()
 	# Rebuild wall meshes
 	_build_wall_multimesh()
