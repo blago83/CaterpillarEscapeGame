@@ -1,10 +1,10 @@
 extends Node3D
 
 const CELL := 1.0
-const WALL_HEIGHT := 0.85
+const WALL_HEIGHT := 0.60
 const GROUND_COLOR := Color(0.76, 0.70, 0.50)
-const BUSH_TOP := Color(0.40, 0.62, 0.10)
-const BUSH_BOTTOM := Color(0.12, 0.35, 0.07)
+const BUSH_TOP := Color(0.48, 0.70, 0.15)
+const BUSH_BOTTOM := Color(0.22, 0.48, 0.12)
 
 # Camera offset from the look-at target (gives that ~-52°, -32° perspective feel)
 const CAM_OFFSET := Vector3(0.1, 9.0, 7.5)
@@ -153,6 +153,7 @@ var _is_reversing: bool = false
 var _move_anim_remaining := 0.0
 var _allow_busy_release := true
 var _crawl_motion_time := 0.0
+var _want_move_sound := false
 
 var _maze_w: int = 0
 var _maze_h: int = 0
@@ -172,6 +173,30 @@ const IDLE_LOOK_DELAY := 3.0  # seconds before caterpillar looks at camera
 var _is_looking_at_camera := false
 var _body_shadow: MeshInstance3D = null
 
+# ── Bush biting ──
+const BITE_DURATION := 6.0       # seconds per bite – matches bite.wav length
+const BITES_TO_EAT := 3          # bites needed to destroy a bush
+var _bite_target: Vector2i = Vector2i(-999, -999)  # cell being bitten
+var _bite_count: Dictionary = {} # cell -> int (accumulated bites)
+var _bite_timer := 0.0           # countdown for current bite
+var _is_biting := false
+var _wall_mm_inst: MultiMeshInstance3D = null
+var _lump_mm_inst: MultiMeshInstance3D = null
+var _bite_marks: Array[Node3D] = []  # visual bite mark nodes
+var _bitten_bush_nodes: Dictionary = {}   # cell -> MeshInstance3D (individual shrinking bush)
+var _bitten_bush_hscale: Dictionary = {}  # cell -> float (original h_scale)
+var _cell_wall_index: Dictionary = {}     # cell -> int index in wall MultiMesh
+var _cell_wall_scales: Dictionary = {}    # cell -> Vector2 (w_scale, h_scale) from MM build
+var _cell_lump_range: Dictionary = {}     # cell -> Vector2i (lump start, end) in lump MultiMesh
+
+# ── Sounds ──
+var _snd_move: AudioStreamPlayer
+var _snd_bite: AudioStreamPlayer
+var _snd_eat: AudioStreamPlayer
+var _snd_leaf: AudioStreamPlayer
+var _snd_portal: AudioStreamPlayer
+var _snd_spider: AudioStreamPlayer
+
 @onready var cam: Camera3D = $Camera3D
 @onready var maze_layer: Node3D = $MazeLayer
 @onready var objects_layer: Node3D = $ObjectsLayer
@@ -183,17 +208,58 @@ func _ready() -> void:
 	RenderingServer.set_default_clear_color(Color(0.12, 0.18, 0.08))
 	_init_shared_resources()
 	_setup_lighting()
+	_init_sounds()
 	$CanvasLayer/HUD/TopBar/RetryButton.pressed.connect(_on_retry)
 	$CanvasLayer/HUD/TopBar/MenuButton.pressed.connect(_on_menu)
 	$CanvasLayer/WinPanel/VBox/NextButton.pressed.connect(_on_next)
 	load_level(current_level)
 
+func _init_sounds() -> void:
+	var sound_map := {
+		"move": "res://assets/sounds/caterpillar_goofy_footsteps.wav",
+		"bite": "res://assets/sounds/apple-bite.wav",
+		"eat":  "res://assets/sounds/eat_wall.wav",
+		"leaf": "res://assets/sounds/leaf_pickup.wav",
+		"portal": "res://assets/sounds/portal_enter.wav",
+		"spider": "res://assets/sounds/spider_alert.wav",
+	}
+	for key in sound_map:
+		var player := AudioStreamPlayer.new()
+		var stream := load(sound_map[key]) as AudioStream
+		if stream:
+			player.stream = stream
+		player.bus = "Master"
+		add_child(player)
+		set("_snd_" + key, player)
+	# Tweak volumes
+	_snd_move.volume_db = -10.0
+	_snd_bite.volume_db = 0.0
+	_snd_eat.volume_db = 2.0
+	_snd_leaf.volume_db = 1.0
+	_snd_portal.volume_db = 1.0
+	_snd_spider.volume_db = 3.0
+	if _snd_move and not _snd_move.finished.is_connected(_on_move_sound_finished):
+		_snd_move.finished.connect(_on_move_sound_finished)
+
+func _set_move_sound_active(active: bool) -> void:
+	_want_move_sound = active
+	if active and _snd_move and not _snd_move.playing:
+		_snd_move.pitch_scale = 1.0
+		_snd_move.play()
+	elif not active and _snd_move and _snd_move.playing:
+		_snd_move.stop()
+
+func _on_move_sound_finished() -> void:
+	if _want_move_sound and _snd_move:
+		_snd_move.pitch_scale = 1.0
+		_snd_move.play()
+
 func _init_shared_resources() -> void:
-	# Hedge shader – rounded top, gradient from yellow-green top to dark green bottom
+	# Hedge shader – lit, lumpy top, gradient with leaf detail
 	var hedge_shader := Shader.new()
 	hedge_shader.code = "
 shader_type spatial;
-render_mode cull_disabled, unshaded;
+render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
 uniform vec3 color_top : source_color = vec3(0.55, 0.78, 0.15);
 uniform vec3 color_bot : source_color = vec3(0.18, 0.45, 0.10);
 uniform sampler2D leaf_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
@@ -202,21 +268,24 @@ uniform float tex_influence : hint_range(0.0, 1.0) = 0.6;
 
 varying vec3 v_world_pos;
 varying vec3 v_world_normal;
+varying float v_height;
+
+float hash3(vec3 p) {
+    return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+}
 
 void vertex() {
-    // Capture stable world-space position BEFORE any vertex modification
-    v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-    v_world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+    vec3 world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+    v_world_pos = world;
 
-    // Rounded-box SDF-style rounding for all edges and corners
+    // Rounded-box SDF rounding for edges
     float half_w = 0.5;
     float half_h = 0.425;
-    float r = 0.1;
+    float r = 0.12;
 
     vec3 local = VERTEX;
     vec3 s = sign(local);
     vec3 a = abs(local);
-
     vec3 inner = vec3(half_w - r, half_h - r, half_w - r);
     vec3 d = max(a - inner, vec3(0.0));
     float l = length(d);
@@ -224,29 +293,54 @@ void vertex() {
         vec3 rounded = min(a, inner) + d * (r / l);
         local = s * rounded;
     }
+
+    // Lumpy displacement on upper half for organic bush look
+    float top_mask = smoothstep(0.15, 0.40, local.y);
+    float lump1 = hash3(floor(world * 3.5)) * 0.08;
+    float lump2 = hash3(floor(world * 7.0 + vec3(33.0))) * 0.04;
+    float lump3 = sin(world.x * 12.0 + world.z * 9.0) * 0.015;
+    vec3 bump_dir = normalize(local);
+    bump_dir.y = max(bump_dir.y, 0.3);
+    bump_dir = normalize(bump_dir);
+    local += bump_dir * (lump1 + lump2 + lump3) * top_mask;
+
     VERTEX = local;
+    v_height = local.y;
+    v_world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 }
 
 void fragment() {
-    // Use the stable pre-rounding world position from the vertex shader
+    // Triplanar leaf texture
     vec3 blend_weights = abs(v_world_normal);
     blend_weights = pow(blend_weights, vec3(4.0));
     blend_weights /= (blend_weights.x + blend_weights.y + blend_weights.z);
-
-    // Triplanar sampling using stable coordinates
     vec3 tex_x = texture(leaf_tex, v_world_pos.yz * tex_scale).rgb;
     vec3 tex_y = texture(leaf_tex, v_world_pos.xz * tex_scale).rgb;
     vec3 tex_z = texture(leaf_tex, v_world_pos.xy * tex_scale).rgb;
     vec3 leaf_col = tex_x * blend_weights.x + tex_y * blend_weights.y + tex_z * blend_weights.z;
 
-    // Vertical gradient from bottom to top
-    float h = clamp(v_world_pos.y / 0.85, 0.0, 1.0);
-    vec3 base = mix(color_bot, color_top, h);
+    // Vertical gradient
+    float h = clamp(v_height / 0.85, 0.0, 1.0);
+    vec3 base = mix(color_bot, color_top, smoothstep(0.0, 1.0, h));
 
-    // Blend the leaf texture pattern with the gradient colour
+    // Leaf texture blend
     base = mix(base, base * leaf_col * 1.3, tex_influence);
 
+    // Subtle color variation using world pos hash
+    float var1 = hash3(floor(v_world_pos * 2.0)) * 0.08 - 0.04;
+    base += vec3(var1 * 0.5, var1, var1 * 0.3);
+
+    // Darken crevices at bottom (gentle)
+    float ao = smoothstep(0.0, 0.20, h);
+    base *= mix(0.78, 1.0, ao);
+
     ALBEDO = base;
+    ROUGHNESS = 0.75;
+    SPECULAR = 0.2;
+    // Slight normal perturbation for leafy feel
+    float nx = hash3(v_world_pos * 20.0) - 0.5;
+    float nz = hash3(v_world_pos * 20.0 + vec3(77.0)) - 0.5;
+    NORMAL_MAP = vec3(0.5 + nx * 0.15, 0.5 + nz * 0.15, 1.0);
 }
 "
 	_wall_mat = ShaderMaterial.new()
@@ -320,7 +414,17 @@ func _clear() -> void:
 	wall_set.clear()
 	segment_cells.clear()
 	segment_nodes.clear()
+	_bite_count.clear()
+	_is_biting = false
+	_wall_mm_inst = null
+	_lump_mm_inst = null
+	_bite_marks.clear()
 	_segment_targets.clear()
+	_bitten_bush_nodes.clear()
+	_bitten_bush_hscale.clear()
+	_cell_wall_index.clear()
+	_cell_wall_scales.clear()
+	_cell_lump_range.clear()
 	_segment_target_rots.clear()
 	leaves.clear()
 	hazards.clear()
@@ -619,21 +723,90 @@ func _spawn_decorations() -> void:
 				3: _make_grass_tuft(pos)
 
 func _build_wall_multimesh() -> void:
-	# Bush body
+	# Bush body boxes with per-cell random height/scale variation
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = _wall_mesh
 	mm.instance_count = _wall_cells.size()
+	var body_rng := RandomNumberGenerator.new()
+	body_rng.seed = 5432
 	for i in _wall_cells.size():
-		var p := _pos(_wall_cells[i])
+		var cell_i := _wall_cells[i]
+		var p := _pos(cell_i)
+		var h_scale := body_rng.randf_range(0.80, 1.10)
+		var w_scale := body_rng.randf_range(0.92, 1.06)
+		_cell_wall_index[cell_i] = i
+		_cell_wall_scales[cell_i] = Vector2(w_scale, h_scale)
 		var t := Transform3D.IDENTITY
-		t.origin = Vector3(p.x, WALL_HEIGHT * 0.5, p.z)
+		if not _bitten_bush_nodes.has(cell_i):
+			t = t.scaled(Vector3(w_scale, h_scale, w_scale))
+			t.origin = Vector3(p.x, WALL_HEIGHT * 0.5 * h_scale, p.z)
+		else:
+			t.origin = Vector3(0.0, -9999.0, 0.0)  # hide: individual node handles this cell
 		mm.set_instance_transform(i, t)
 	var mm_inst := MultiMeshInstance3D.new()
 	mm_inst.multimesh = mm
 	mm_inst.material_override = _wall_mat
 	mm_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	maze_layer.add_child(mm_inst)
+	_wall_mm_inst = mm_inst
+
+	# Bush canopy lumps – bigger, more varied clusters
+	var lump_mesh := SphereMesh.new()
+	lump_mesh.radius = 0.24
+	lump_mesh.height = 0.30
+	lump_mesh.radial_segments = 10
+	lump_mesh.rings = 6
+
+	var lump_mat := ShaderMaterial.new()
+	lump_mat.shader = _wall_mat.shader
+	lump_mat.set_shader_parameter("color_top", Vector3(BUSH_TOP.r * 1.15, BUSH_TOP.g * 1.1, BUSH_TOP.b * 1.05))
+	lump_mat.set_shader_parameter("color_bot", Vector3(BUSH_TOP.r * 0.9, BUSH_TOP.g * 0.9, BUSH_TOP.b * 0.85))
+	var leaf_tex := load("res://assets/New/leaf_pattern.png") as Texture2D
+	if leaf_tex:
+		lump_mat.set_shader_parameter("leaf_tex", leaf_tex)
+	lump_mat.set_shader_parameter("tex_scale", 0.6)
+	lump_mat.set_shader_parameter("tex_influence", 0.5)
+
+	# Place 3-6 lumps per bush cell, with large variation
+	var lump_transforms: Array[Transform3D] = []
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9876
+	_cell_lump_range.clear()
+	for i in _wall_cells.size():
+		var lump_cell_i := _wall_cells[i]
+		var lp := _pos(lump_cell_i)
+		var cell_h := body_rng.randf_range(0.85, 1.25)  # reseeded, but deterministic
+		var base_y := WALL_HEIGHT * cell_h
+		var n_lumps := rng.randi_range(3, 6)
+		var lump_start := lump_transforms.size()
+		for _j in n_lumps:
+			var ox := rng.randf_range(-0.35, 0.35)
+			var oz := rng.randf_range(-0.35, 0.35)
+			var oy := rng.randf_range(-0.06, 0.10)
+			var s := rng.randf_range(0.5, 1.2)
+			var sy := s * rng.randf_range(0.5, 0.9)
+			var lt := Transform3D.IDENTITY
+			if not _bitten_bush_nodes.has(lump_cell_i):
+				lt = lt.scaled(Vector3(s, sy, s))
+				lt.origin = Vector3(lp.x + ox, base_y + oy, lp.z + oz)
+			else:
+				lt.origin = Vector3(0.0, -9999.0, 0.0)  # hide
+			lump_transforms.append(lt)
+		_cell_lump_range[lump_cell_i] = Vector2i(lump_start, lump_transforms.size())
+
+	var lump_mm := MultiMesh.new()
+	lump_mm.transform_format = MultiMesh.TRANSFORM_3D
+	lump_mm.mesh = lump_mesh
+	lump_mm.instance_count = lump_transforms.size()
+	for i in lump_transforms.size():
+		lump_mm.set_instance_transform(i, lump_transforms[i])
+	var lump_inst := MultiMeshInstance3D.new()
+	lump_inst.multimesh = lump_mm
+	lump_inst.material_override = lump_mat
+	lump_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	maze_layer.add_child(lump_inst)
+	_lump_mm_inst = lump_inst
 
 func _make_leaf(cell: Vector2i) -> void:
 	var node := Node3D.new()
@@ -797,26 +970,33 @@ func _seg_dir(i: int) -> Vector2i:
 			return d
 	return facing
 
-func _calc_target_rotations() -> Array[float]:
+func _yaw_from_path_tangent(tangent: Vector3) -> float:
+	if tangent.length_squared() <= 0.000001:
+		return _dir_angle_y(facing)
+	return atan2(-tangent.x, -tangent.z)
+
+func _calc_target_rotations(positions: Array[Vector3] = []) -> Array[float]:
+	var path_positions := positions
+	if path_positions.is_empty():
+		path_positions = _calc_positions()
 	var rots: Array[float] = []
-	for i in segment_cells.size():
-		var dir := _seg_dir(i)
-		var angle := _dir_angle_y(dir)
+	for i in path_positions.size():
+		if i == 0:
+			rots.append(_dir_angle_y(facing))
+			continue
 
-		# At a turn, the segment between two different directions gets a 45° blend
-		if i > 0 and i < segment_cells.size() - 1:
-			var dir_ahead := _seg_dir(i - 1)
-			var dir_behind := _seg_dir(i + 1)
-			if dir_ahead != Vector2i.ZERO and dir_behind != Vector2i.ZERO and dir_ahead != dir_behind:
-				var a1 := _dir_angle_y(dir_ahead)
-				var a2 := _dir_angle_y(dir_behind)
-				angle = lerp_angle(a1, a2, 0.5)
+		var tangent := Vector3.ZERO
+		if i < path_positions.size() - 1:
+			tangent = path_positions[i - 1] - path_positions[i + 1]
+		if tangent.length_squared() <= 0.000001:
+			tangent = path_positions[i - 1] - path_positions[i]
 
-		rots.append(angle)
+		rots.append(_yaw_from_path_tangent(tangent))
 	return rots
 
 func _update_rotations_instant() -> void:
-	var target_rots := _calc_target_rotations()
+	var positions := _calc_positions()
+	var target_rots := _calc_target_rotations(positions)
 	for i in segment_nodes.size():
 		if i < target_rots.size():
 			segment_nodes[i].rotation.y = target_rots[i]
@@ -866,6 +1046,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		_try_move(Vector2i.LEFT); move_timer = 0.0
 	elif event.is_action_pressed("move_right"):
 		_try_move(Vector2i.RIGHT); move_timer = 0.0
+	elif event is InputEventKey and event.keycode == KEY_SPACE and event.pressed and not event.echo:
+		_start_bite()
 
 func _process(delta: float) -> void:
 	_frame_count += 1
@@ -883,6 +1065,9 @@ func _process(delta: float) -> void:
 		print("[DIAG t=%.0f] FPS=%.0f nodes=%d objs=%d mem=%.1fMB msgbuf=%.1fMB vram=%.1fMB draws=%.0f moves=%d segments=%d catchildren=%d" % [
 			_diag_timer + 5.0, fps, node_count, obj_count, mem_static, mem_msg, vram, draw_calls, _move_count, segment_nodes.size(), cat_layer.get_child_count()])
 		_diag_timer = 0.0
+
+	# ── Bush biting ──
+	_process_bite(delta)
 
 	# ── Debug camera controls ──
 	# ROTATION:  Q/E = tilt (X), Z/C = yaw (Y), R/T = roll (Z)
@@ -962,14 +1147,23 @@ func _process(delta: float) -> void:
 				var amp := 0.13 if i > 0 and i < segment_nodes.size() - 1 else 0.08
 				target_pos.y += sin(phase) * amp * crawl_alpha
 			segment_nodes[i].position = segment_nodes[i].position.lerp(target_pos, lerp_speed)
-		if i < _segment_target_rots.size():
-			segment_nodes[i].rotation.y = lerp_angle(segment_nodes[i].rotation.y, _segment_target_rots[i], lerp_speed)
+	var live_positions: Array[Vector3] = []
+	for segment in segment_nodes:
+		live_positions.append(segment.position)
+	var live_rots := _calc_target_rotations(live_positions)
+	for i in segment_nodes.size():
+		if i < live_rots.size():
+			segment_nodes[i].rotation.y = lerp_angle(segment_nodes[i].rotation.y, live_rots[i], lerp_speed)
 	_update_body_shadow()
 
 	if _move_anim_remaining > 0.0:
 		_move_anim_remaining = maxf(_move_anim_remaining - delta, 0.0)
-		if _move_anim_remaining <= 0.0 and _allow_busy_release:
-			is_busy = false
+		if _move_anim_remaining <= 0.0:
+			if _allow_busy_release:
+				is_busy = false
+
+	if _move_anim_remaining <= 0.0 and (not is_busy or not _allow_busy_release):
+		_set_move_sound_active(false)
 
 	# ── Idle detection: tell head segment it's idle ──
 	_idle_timer += delta
@@ -1102,6 +1296,7 @@ func _move_backward() -> void:
 	for sn in segment_nodes:
 		sn.wiggle_legs(0.65)
 	_move_anim_remaining = REVERSE_MOVE_DURATION
+	_set_move_sound_active(true)
 
 	if hazards.has(lead_cell):
 		_allow_busy_release = false
@@ -1135,6 +1330,10 @@ func _move_to(target: Vector2i) -> void:
 		leaves[target].queue_free()
 		leaves.erase(target)
 		leaves_left -= 1
+		# Happy sparkle leaf sound
+		if _snd_leaf:
+			_snd_leaf.pitch_scale = randf_range(0.9, 1.15)
+			_snd_leaf.play()
 		if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_expression"):
 			segment_nodes[0].set_expression("happy", 1.2)
 		var new_cell: Vector2i = prev[-1]
@@ -1155,15 +1354,20 @@ func _move_to(target: Vector2i) -> void:
 	for n in segment_nodes:
 		n.wiggle_legs(1.0)
 	_move_anim_remaining = FORWARD_MOVE_DURATION
+	_set_move_sound_active(true)
 
 	if hazards.has(target):
 		_allow_busy_release = false
+		if _snd_spider:
+			_snd_spider.play()
 		await _lose()
 		return
 	if leaves_left <= 0 and exit_node:
 		exit_node.set_meta("open", true)
 	if target == exit_cell and leaves_left <= 0:
 		_allow_busy_release = false
+		if _snd_portal:
+			_snd_portal.play()
 		await _win()
 		return
 
@@ -1171,6 +1375,162 @@ func _move_to(target: Vector2i) -> void:
 
 func _bump() -> void:
 	pass
+
+# ── Bush biting ──
+
+func _start_bite() -> void:
+	if _is_biting or is_busy:
+		return
+	# Check if there's a wall in front of the head
+	var target_cell := segment_cells[0] + facing
+	if not wall_set.has(target_cell):
+		return
+	# Can't bite border walls (edges of the maze)
+	if target_cell.x <= 0 or target_cell.x >= _maze_w - 1:
+		return
+	if target_cell.y <= 0 or target_cell.y >= _maze_h - 1:
+		return
+	_bite_target = target_cell
+	_is_biting = true
+	_bite_timer = BITE_DURATION
+	is_busy = true
+	# Chomp! – play the full bite.wav (pitch fixed so duration stays ~6 s)
+	if _snd_bite:
+		_snd_bite.pitch_scale = 1.0
+		_snd_bite.play()
+	# Chewing expression
+	if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_expression"):
+		segment_nodes[0].set_expression("happy", BITE_DURATION)
+
+func _process_bite(delta: float) -> void:
+	if not _is_biting:
+		return
+	_bite_timer -= delta
+	# Head wiggle while biting
+	if segment_nodes.size() > 0:
+		var wiggle := sin(_bite_timer * 18.0) * 0.008
+		segment_nodes[0].position.x += wiggle
+	if _bite_timer <= 0.0:
+		_finish_bite()
+
+func _finish_bite() -> void:
+	_is_biting = false
+	is_busy = false
+	if not _bite_count.has(_bite_target):
+		_bite_count[_bite_target] = 0
+	_bite_count[_bite_target] += 1
+	# Add a visual bite mark on the bush
+	_apply_bush_bite_visual(_bite_target, _bite_count[_bite_target])
+	if _bite_count[_bite_target] >= BITES_TO_EAT:
+		# Satisfying gulp
+		if _snd_eat:
+			_snd_eat.play()
+		_eat_wall(_bite_target)
+		_bite_count.erase(_bite_target)
+
+func _apply_bush_bite_visual(cell: Vector2i, bite_num: int) -> void:
+	var wall_pos := _pos(cell)
+	var head_pos := _pos(segment_cells[0])
+	var dir_to_head := (head_pos - wall_pos).normalized()
+	var side_dir := Vector3(-dir_to_head.z, 0.0, dir_to_head.x)
+
+	# ── First bite: detach cell from MultiMesh, spawn individual shrinkable node ──
+	if bite_num == 1 and not _bitten_bush_nodes.has(cell):
+		var wall_idx: int = _cell_wall_index.get(cell, -1)
+		if wall_idx >= 0 and _wall_mm_inst and _wall_mm_inst.multimesh:
+			_wall_mm_inst.multimesh.set_instance_transform(wall_idx,
+				Transform3D(Basis.IDENTITY, Vector3(0.0, -9999.0, 0.0)))
+		if _cell_lump_range.has(cell) and _lump_mm_inst and _lump_mm_inst.multimesh:
+			var lr: Vector2i = _cell_lump_range[cell]
+			for li in range(lr.x, lr.y):
+				_lump_mm_inst.multimesh.set_instance_transform(li,
+					Transform3D(Basis.IDENTITY, Vector3(0.0, -9999.0, 0.0)))
+		var scales: Vector2 = _cell_wall_scales.get(cell, Vector2(1.0, 1.0))
+		var bush := MeshInstance3D.new()
+		bush.mesh = _wall_mesh
+		bush.material_override = _wall_mat
+		bush.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		bush.scale = Vector3(scales.x, scales.y, scales.x)
+		bush.position = Vector3(wall_pos.x, WALL_HEIGHT * 0.5 * scales.y, wall_pos.z)
+		maze_layer.add_child(bush)
+		_bitten_bush_nodes[cell] = bush
+		_bitten_bush_hscale[cell] = scales.y
+
+	# ── Shrink bush by 1/3 per bite (only for bites 1 and 2; bite 3 handled by _eat_wall) ──
+	var bush_node: MeshInstance3D = _bitten_bush_nodes.get(cell)
+	if bush_node and is_instance_valid(bush_node) and bite_num < BITES_TO_EAT:
+		var h_orig: float = _bitten_bush_hscale.get(cell, 1.0)
+		var fraction := 1.0 - float(bite_num) / float(BITES_TO_EAT)
+		var target_sy := h_orig * fraction
+		var target_py := WALL_HEIGHT * 0.5 * target_sy
+		var tw := create_tween()
+		tw.set_parallel(true)
+		tw.tween_property(bush_node, "scale:y", target_sy, 0.4) \
+			.set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
+		tw.tween_property(bush_node, "position:y", target_py, 0.4) \
+			.set_trans(Tween.TRANS_BOUNCE).set_ease(Tween.EASE_OUT)
+
+	# ── Bite hole: cluster of irregular dark blobs embedded in the bush face ──
+	var rng := RandomNumberGenerator.new()
+	rng.seed = cell.x * 1000 + cell.y * 100 + bite_num * 37
+	var n_blobs := rng.randi_range(4, 6)
+	for _i in n_blobs:
+		var blob := MeshInstance3D.new()
+		var bm := SphereMesh.new()
+		var r := rng.randf_range(0.07, 0.17)
+		bm.radius = r
+		bm.height = r * rng.randf_range(0.8, 2.2)
+		bm.radial_segments = 6
+		bm.rings = 4
+		blob.mesh = bm
+		var bmat := StandardMaterial3D.new()
+		bmat.albedo_color = Color(
+			rng.randf_range(0.08, 0.20),
+			rng.randf_range(0.05, 0.12),
+			rng.randf_range(0.01, 0.04))
+		bmat.roughness = 0.95
+		bmat.specular = 0.02
+		blob.material_override = bmat
+		blob.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var up_offset := rng.randf_range(0.04, 0.28)
+		var side_offset := rng.randf_range(-0.22, 0.22)
+		var face_depth := rng.randf_range(0.28, 0.46)
+		blob.position = wall_pos + dir_to_head * face_depth \
+			+ Vector3(0.0, up_offset, 0.0) + side_dir * side_offset
+		blob.rotation = Vector3(
+			rng.randf_range(-0.9, 0.9),
+			rng.randf_range(-0.9, 0.9),
+			rng.randf_range(-0.9, 0.9))
+		maze_layer.add_child(blob)
+		_bite_marks.append(blob)
+
+func _eat_wall(cell: Vector2i) -> void:
+	# Remove from game logic
+	wall_set.erase(cell)
+	_wall_cells.erase(cell)
+	# Remove old multimesh instances and rebuild without this cell
+	if _wall_mm_inst:
+		_wall_mm_inst.queue_free()
+		_wall_mm_inst = null
+	if _lump_mm_inst:
+		_lump_mm_inst.queue_free()
+		_lump_mm_inst = null
+	# Flatten the individual bush to a near-zero stump so it persists as a ground marker
+	var bush_node: MeshInstance3D = _bitten_bush_nodes.get(cell)
+	if bush_node and is_instance_valid(bush_node):
+		var tw := create_tween()
+		tw.set_parallel(true)
+		tw.tween_property(bush_node, "scale:y", 0.04, 0.3) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		tw.tween_property(bush_node, "position:y", WALL_HEIGHT * 0.02, 0.3) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	# Keep bite hole blobs on the ground as remnant markers – do NOT free them
+	_bite_marks.clear()
+	# Rebuild wall meshes
+	_build_wall_multimesh()
+	# Happy munch expression
+	if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_expression"):
+		segment_nodes[0].set_expression("happy", 1.5)
 
 func _lose() -> void:
 	hud_label.text = "Ouch! Restarting..."
