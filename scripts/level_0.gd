@@ -8,6 +8,17 @@ const MAX_ZOOM := 1.6
 const ZOOM_STEP := 0.08
 const MOVE_SPEED := 4.0
 const TURN_SPEED := 8.0
+const EXPRESSION_CYCLE_INTERVAL := 1.0
+const TEST_EXPRESSIONS := [
+	"happy",
+	"sleeping",
+	"tired",
+	"chewing",
+	"biting",
+	"surprised",
+	"curious",
+	"dizzy"
+]
 
 var _zoom := 1.0
 var _move_dir := Vector2.ZERO
@@ -16,12 +27,23 @@ var _segments: Array[Node3D] = []
 var _segment_local_positions: Array[Vector3] = []
 var _yaw_target := 0.0
 var _body_shadow: MeshInstance3D = null
+var _selected_expression_idx := 0
+var _cycle_enabled := false
+var _cycle_timer := 0.0
+var _lock_expression := true
 
 @onready var cam: Camera3D = $Camera3D
 @onready var world_root: Node3D = $World
 @onready var player_root: Node3D = $PlayerRoot
 @onready var info_label: Label = $CanvasLayer/HUD/Panel/VBox/InfoLabel
 @onready var zoom_label: Label = $CanvasLayer/HUD/Panel/VBox/ZoomLabel
+@onready var expression_select: OptionButton = $CanvasLayer/HUD/Panel/VBox/ExpressionRow/ExpressionSelect
+@onready var apply_expr_button: Button = $CanvasLayer/HUD/Panel/VBox/ExpressionRow/ApplyExpressionButton
+@onready var prev_expr_button: Button = $CanvasLayer/HUD/Panel/VBox/ExpressionRow/PrevExpressionButton
+@onready var next_expr_button: Button = $CanvasLayer/HUD/Panel/VBox/ExpressionRow/NextExpressionButton
+@onready var random_expr_button: Button = $CanvasLayer/HUD/Panel/VBox/ExpressionOptionsRow/RandomExpressionButton
+@onready var cycle_expr_button: Button = $CanvasLayer/HUD/Panel/VBox/ExpressionOptionsRow/CycleExpressionButton
+@onready var lock_expr_button: CheckButton = $CanvasLayer/HUD/Panel/VBox/ExpressionOptionsRow/LockExpressionButton
 @onready var back_button: Button = $CanvasLayer/HUD/Panel/VBox/Buttons/BackButton
 @onready var reset_button: Button = $CanvasLayer/HUD/Panel/VBox/Buttons/ResetButton
 
@@ -32,6 +54,7 @@ func _ready() -> void:
 	_spawn_player()
 	_spawn_mouth_preview()
 	_update_camera(true)
+	_setup_expression_controls()
 	back_button.pressed.connect(_on_back_pressed)
 	reset_button.pressed.connect(_on_reset_pressed)
 	_update_hud()
@@ -39,6 +62,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_handle_move_input()
 	_update_player(delta)
+	_update_expression_cycle(delta)
 	_update_camera(false)
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -145,8 +169,9 @@ func _spawn_player() -> void:
 	player_root.rotation.y = 0.0
 	_yaw_target = 0.0
 	_update_body_shadow()
-	if not _segments.is_empty() and _segments[0].has_method("set_idle"):
+	if not _segments.is_empty() and _segments[0].has_method("set_idle") and not _lock_expression:
 		_segments[0].set_idle(true)
+	_apply_selected_expression()
 
 func _spawn_mouth_preview() -> void:
 	var preview_root := Node3D.new()
@@ -247,10 +272,10 @@ func _update_player(delta: float) -> void:
 		var world_dir := Vector3(_move_dir.x, 0.0, _move_dir.y).normalized()
 		player_root.position += world_dir * MOVE_SPEED * delta
 		_yaw_target = atan2(world_dir.x, world_dir.z)
-		if not _segments.is_empty() and _segments[0].has_method("set_idle"):
+		if not _segments.is_empty() and _segments[0].has_method("set_idle") and not _lock_expression:
 			_segments[0].set_idle(false)
 	else:
-		if not _segments.is_empty() and _segments[0].has_method("set_idle"):
+		if not _segments.is_empty() and _segments[0].has_method("set_idle") and not _lock_expression:
 			_segments[0].set_idle(true)
 
 	player_root.rotation.y = lerp_angle(player_root.rotation.y, _yaw_target, delta * TURN_SPEED)
@@ -274,8 +299,9 @@ func _set_zoom(value: float) -> void:
 	_update_hud()
 
 func _update_hud() -> void:
-	info_label.text = "Level 0 Test Ground\nMove: arrows/WASD | Zoom: mouse wheel or +/-\nMouth preview: left of the caterpillar"
+	info_label.text = "Level 0 Test Ground\nMove: arrows/WASD | Zoom: mouse wheel or +/-\nExpression test: dropdown, apply, prev/next, random, cycle"
 	zoom_label.text = "Zoom: %d%%" % int(round(_zoom * 100.0))
+	cycle_expr_button.text = "Stop Cycle" if _cycle_enabled else "Play Cycle"
 
 func _on_back_pressed() -> void:
 	get_tree().change_scene_to_file("res://scenes/MainMenu.tscn")
@@ -285,3 +311,80 @@ func _on_reset_pressed() -> void:
 	player_root.rotation.y = 0.0
 	_yaw_target = 0.0
 	_set_zoom(1.0)
+	_cycle_enabled = false
+	_cycle_timer = 0.0
+	_selected_expression_idx = 0
+	if expression_select.item_count > 0:
+		expression_select.select(0)
+	_apply_selected_expression()
+	_update_hud()
+
+func _setup_expression_controls() -> void:
+	expression_select.clear()
+	for expr in TEST_EXPRESSIONS:
+		expression_select.add_item(expr.capitalize())
+	expression_select.select(_selected_expression_idx)
+
+	apply_expr_button.pressed.connect(_on_apply_expression_pressed)
+	prev_expr_button.pressed.connect(_on_prev_expression_pressed)
+	next_expr_button.pressed.connect(_on_next_expression_pressed)
+	random_expr_button.pressed.connect(_on_random_expression_pressed)
+	cycle_expr_button.pressed.connect(_on_cycle_expression_pressed)
+	lock_expr_button.toggled.connect(_on_lock_expression_toggled)
+	expression_select.item_selected.connect(_on_expression_selected)
+
+	lock_expr_button.button_pressed = _lock_expression
+	_apply_selected_expression()
+
+func _on_expression_selected(index: int) -> void:
+	_selected_expression_idx = clampi(index, 0, TEST_EXPRESSIONS.size() - 1)
+	_apply_selected_expression()
+
+func _on_apply_expression_pressed() -> void:
+	_apply_selected_expression()
+
+func _on_prev_expression_pressed() -> void:
+	_selected_expression_idx = (_selected_expression_idx - 1 + TEST_EXPRESSIONS.size()) % TEST_EXPRESSIONS.size()
+	expression_select.select(_selected_expression_idx)
+	_apply_selected_expression()
+
+func _on_next_expression_pressed() -> void:
+	_selected_expression_idx = (_selected_expression_idx + 1) % TEST_EXPRESSIONS.size()
+	expression_select.select(_selected_expression_idx)
+	_apply_selected_expression()
+
+func _on_random_expression_pressed() -> void:
+	_selected_expression_idx = randi() % TEST_EXPRESSIONS.size()
+	expression_select.select(_selected_expression_idx)
+	_apply_selected_expression()
+
+func _on_cycle_expression_pressed() -> void:
+	_cycle_enabled = not _cycle_enabled
+	_cycle_timer = 0.0
+	_update_hud()
+
+func _on_lock_expression_toggled(pressed: bool) -> void:
+	_lock_expression = pressed
+	if not _segments.is_empty() and _segments[0].has_method("set_idle"):
+		_segments[0].set_idle(not _lock_expression)
+	_apply_selected_expression()
+
+func _update_expression_cycle(delta: float) -> void:
+	if not _cycle_enabled:
+		return
+	_cycle_timer += delta
+	if _cycle_timer < EXPRESSION_CYCLE_INTERVAL:
+		return
+	_cycle_timer = 0.0
+	_selected_expression_idx = (_selected_expression_idx + 1) % TEST_EXPRESSIONS.size()
+	expression_select.select(_selected_expression_idx)
+	_apply_selected_expression()
+
+func _apply_selected_expression() -> void:
+	if _segments.is_empty():
+		return
+	var head := _segments[0]
+	if not head or not head.has_method("set_expression"):
+		return
+	var expr: String = TEST_EXPRESSIONS[_selected_expression_idx]
+	head.call("set_expression", expr, 9999.0)

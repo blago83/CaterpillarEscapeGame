@@ -28,7 +28,7 @@ anchor_bottom = 0.0
 offset_left = 20.0
 offset_top = 20.0
 offset_right = 420.0
-offset_bottom = 170.0
+offset_bottom = 300.0
 
 [node name="VBox" type="VBoxContainer" parent="CanvasLayer/HUD/Panel"]
 layout_mode = 2
@@ -44,6 +44,48 @@ autowrap_mode = 3
 layout_mode = 2
 theme_override_font_sizes/font_size = 18
 text = "Zoom: 100%"
+
+[node name="ExpressionRow" type="HBoxContainer" parent="CanvasLayer/HUD/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="ExpressionSelect" type="OptionButton" parent="CanvasLayer/HUD/Panel/VBox/ExpressionRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ApplyExpressionButton" type="Button" parent="CanvasLayer/HUD/Panel/VBox/ExpressionRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(70, 0)
+text = "Apply"
+
+[node name="PrevExpressionButton" type="Button" parent="CanvasLayer/HUD/Panel/VBox/ExpressionRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(45, 0)
+text = "<"
+
+[node name="NextExpressionButton" type="Button" parent="CanvasLayer/HUD/Panel/VBox/ExpressionRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(45, 0)
+text = ">"
+
+[node name="ExpressionOptionsRow" type="HBoxContainer" parent="CanvasLayer/HUD/Panel/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="RandomExpressionButton" type="Button" parent="CanvasLayer/HUD/Panel/VBox/ExpressionOptionsRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(90, 0)
+text = "Random"
+
+[node name="CycleExpressionButton" type="Button" parent="CanvasLayer/HUD/Panel/VBox/ExpressionOptionsRow"]
+layout_mode = 2
+custom_minimum_size = Vector2(110, 0)
+text = "Play Cycle"
+
+[node name="LockExpressionButton" type="CheckButton" parent="CanvasLayer/HUD/Panel/VBox/ExpressionOptionsRow"]
+layout_mode = 2
+button_pressed = true
+text = "Lock Expression"
 
 [node name="Buttons" type="HBoxContainer" parent="CanvasLayer/HUD/Panel/VBox"]
 layout_mode = 2

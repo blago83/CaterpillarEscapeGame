@@ -3,11 +3,17 @@ extends Node3D
 ## Plump overlapping body, big expressive eyes, antennae, rosy cheeks, tiny feet.
 
 const MouthComponent3DScript: GDScript = preload("res://scripts/mouth_component_3d.gd")
+const IMPORTED_HEAD_DIR := "res://assets/caterpillar/meshy_split_heads/"
+const IMPORTED_HEAD_OFFSET := Vector3(0.0, 0.06, -0.14)
+const IMPORTED_HEAD_ROTATION := Vector3(-45.0, 180.0, 0.0)
+const IMPORTED_HEAD_SCALE := Vector3(1.728, 1.728, 1.728)
 
 const CELL := 1.0
 
 var _mesh: MeshInstance3D
 var _mat: Material
+var _imported_head: Node3D
+var _imported_head_key := ""
 var _foot_left: MeshInstance3D
 var _foot_right: MeshInstance3D
 var _leg_phase := 0.0
@@ -18,14 +24,16 @@ var _crawl_speed := 0.0
 
 # ── Blink ──
 var _eye_nodes: Array[MeshInstance3D] = []
-var _blink_timer := 0.0
-var _blink_interval := 3.0  # seconds between blinks
-var _blink_phase := 0.0  # 0 = open, >0 = blinking
-var _is_blinking := false
+var _iris_nodes: Array[MeshInstance3D] = []
+var _pupil_nodes: Array[MeshInstance3D] = []
+var _eyelid_nodes: Array[MeshInstance3D] = []
 
 # ── Face expression ──
 var _mouth_node: Node3D
 var _mouth_component: Node3D
+var _smile_node: MeshInstance3D
+var _inner_mouth_node: MeshInstance3D
+var _tongue_node: MeshInstance3D
 var _cheek_nodes: Array[MeshInstance3D] = []
 var _eyebrow_nodes: Array[MeshInstance3D] = []
 var _face_time := 0.0
@@ -33,6 +41,12 @@ var _expression := "happy"  # happy, idle, looking, sleeping
 var _expression_timer := 0.0
 var _mouth_base_scale := Vector3(1.3, 0.6, 0.5)
 var _mouth_base_pos := Vector3.ZERO
+var _smile_base_scale := Vector3.ONE
+var _smile_base_pos := Vector3.ZERO
+var _inner_mouth_base_scale := Vector3.ONE
+var _inner_mouth_base_pos := Vector3.ZERO
+var _tongue_base_scale := Vector3.ONE
+var _tongue_base_pos := Vector3.ZERO
 
 # ── Idle behavior ──
 var _is_idle := false
@@ -60,12 +74,15 @@ func _ready() -> void:
 			radius = 0.34
 			_mat = _make_body_gradient_material(0, false)
 			_mat.set_shader_parameter("show_stripes", false)
-			_mat.set_shader_parameter("pear_shape", 1.0)
+			# Start from a rounder head base; only gentle cheek widening.
+			_mat.set_shader_parameter("pear_shape", 0.35)
 			_mat.set_shader_parameter("segment_radius", 0.34)
-			# Override head colors to be slightly brighter
-			_mat.set_shader_parameter("mid_color", Color(0.68, 0.90, 0.18))
+			# Clean stylized palette: bright green head.
+			_mat.set_shader_parameter("top_color", Color(0.56, 0.86, 0.18))
+			_mat.set_shader_parameter("mid_color", Color(0.46, 0.78, 0.15))
+			_mat.set_shader_parameter("bottom_color", Color(0.32, 0.62, 0.12))
 			_mat.set_shader_parameter("specular_amt", 0.55)
-			_mat.set_shader_parameter("roughness_amt", 0.35)
+			_mat.set_shader_parameter("roughness_amt", 0.32)
 		"tail":
 			radius = 0.22
 			_mat = _make_body_gradient_material(seg_index, true)
@@ -77,7 +94,7 @@ func _ready() -> void:
 	sphere.radius = radius
 	# Head is taller (egg-shaped) for pear deformation; body/tail squashed
 	if seg_type == "head":
-		sphere.height = radius * 2.1
+		sphere.height = radius * 1.95
 	else:
 		sphere.height = radius * 1.75
 	sphere.radial_segments = 32
@@ -86,40 +103,81 @@ func _ready() -> void:
 	_mesh.material_override = _mat
 	var head_lift := radius * 0.16 if seg_type == "head" else 0.0
 	_mesh.position.y = radius * 0.85 + head_lift
+	if seg_type == "head":
+		# Slightly flatten the bottom silhouette while keeping the head smooth.
+		_mesh.scale = Vector3(1.0, 0.93, 1.0)
 	_base_mesh_y = radius * 0.85 + head_lift
 	_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 	add_child(_mesh)
 
-	# Darker underbelly stripe (head only – body/tail use gradient shader)
 	if seg_type == "head":
+		_mesh.visible = not _attach_imported_head(_expression)
+	else:
+		_mesh.visible = true
+
+	# Darker underbelly stripe (body/tail only – head is fully replaced by GLB)
+	if seg_type != "head":
 		_add_belly_stripe(radius, seg_type)
 
-	# Glossy top highlight — wet/shiny look on top of every segment
-	_add_top_shine(radius, seg_type)
-
-	if seg_type == "head":
-		_add_neck_connector(radius)
+	# Glossy top highlight — wet/shiny look on body/tail only
+	if seg_type != "head":
+		_add_top_shine(radius, seg_type)
 
 	# (separator rings removed for cleaner look)
 
 	match seg_type:
 		"head":
-			# Face pivot – tilted upward so features face the overhead camera
-			var face_pivot := Node3D.new()
-			face_pivot.position = Vector3(0.0, radius * 0.04, -radius * 0.02)
-			face_pivot.rotation.x = deg_to_rad(55)  # Positive = tilts front-face features upward
-			_mesh.add_child(face_pivot)
-			_add_eyes(radius, face_pivot)
-			_add_eyebrows(radius, face_pivot)
-			_add_cheeks(radius, face_pivot)
-			_add_mouth(radius, face_pivot)
-			_add_antennae(radius)
-			_add_feet(radius, true)
+			pass
 		"tail":
 			_add_tail_tip(radius)
 			_add_feet(radius, true)
 		_:
 			_add_feet(radius, false)
+
+func _head_scene_path_for_expression(expr: String) -> String:
+	var normalized := _normalize_expression(expr)
+	return IMPORTED_HEAD_DIR + normalized + ".glb"
+
+func _attach_imported_head(expr: String) -> bool:
+	var head_key := _normalize_expression(expr)
+	if _imported_head and is_instance_valid(_imported_head) and _imported_head_key == head_key:
+		return true
+	_clear_imported_head()
+	var imported_head_path := _head_scene_path_for_expression(head_key)
+	var imported_scene := load(imported_head_path) as PackedScene
+	var imported: Node3D = null
+	if imported_scene:
+		imported = imported_scene.instantiate() as Node3D
+	else:
+		var gltf_document := GLTFDocument.new()
+		var gltf_state := GLTFState.new()
+		if gltf_document.append_from_file(imported_head_path, gltf_state) == OK:
+			imported = gltf_document.generate_scene(gltf_state) as Node3D
+	if not imported:
+		return false
+	imported.name = "ImportedHead"
+	# Attach to the segment root, not the hidden fallback mesh, so it stays visible.
+	imported.position = Vector3(
+		IMPORTED_HEAD_OFFSET.x,
+		_mesh.position.y + IMPORTED_HEAD_OFFSET.y,
+		IMPORTED_HEAD_OFFSET.z)
+	imported.rotation_degrees = IMPORTED_HEAD_ROTATION
+	imported.scale = IMPORTED_HEAD_SCALE
+	add_child(imported)
+	_imported_head = imported
+	_imported_head_key = head_key
+	return true
+
+func _clear_imported_head() -> void:
+	if _imported_head and is_instance_valid(_imported_head):
+		_imported_head.queue_free()
+	_imported_head = null
+	_imported_head_key = ""
+
+func _refresh_imported_head_for_expression() -> void:
+	if String(get_meta("seg_type", "body")) != "head":
+		return
+	_mesh.visible = not _attach_imported_head(_expression)
 
 # ── Body details ──
 
@@ -499,6 +557,67 @@ func _add_spots(radius: float) -> void:
 
 # ── Head features ──
 
+func _add_head_base_volumes(head_radius: float) -> void:
+	# Light yellow-green muzzle/front-face bulge.
+	var muzzle_mat := StandardMaterial3D.new()
+	muzzle_mat.albedo_color = Color(0.88, 0.93, 0.50)
+	muzzle_mat.specular = 0.45
+	muzzle_mat.roughness = 0.36
+
+	var muzzle := MeshInstance3D.new()
+	var muzzle_mesh := SphereMesh.new()
+	muzzle_mesh.radius = head_radius * 0.43
+	muzzle_mesh.height = head_radius * 0.34
+	muzzle_mesh.radial_segments = 28
+	muzzle_mesh.rings = 14
+	muzzle.mesh = muzzle_mesh
+	muzzle.material_override = muzzle_mat
+	muzzle.position = Vector3(0.0, head_radius * -0.06, -head_radius * 0.66)
+	muzzle.scale = Vector3(1.03, 0.84, 0.70)
+	muzzle.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_mesh.add_child(muzzle)
+
+	# Soft cheek support volumes blended into the muzzle region.
+	var cheek_mat := StandardMaterial3D.new()
+	cheek_mat.albedo_color = Color(0.79, 0.91, 0.33)
+	cheek_mat.specular = 0.34
+	cheek_mat.roughness = 0.42
+
+	var blush_mat := StandardMaterial3D.new()
+	blush_mat.albedo_color = Color(0.96, 0.63, 0.38, 0.45)
+	blush_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	blush_mat.specular = 0.06
+	blush_mat.roughness = 0.92
+
+	for side in [-1.0, 1.0]:
+		var cheek := MeshInstance3D.new()
+		var cheek_mesh := SphereMesh.new()
+		cheek_mesh.radius = head_radius * 0.25
+		cheek_mesh.height = head_radius * 0.20
+		cheek_mesh.radial_segments = 24
+		cheek_mesh.rings = 12
+		cheek.mesh = cheek_mesh
+		cheek.material_override = cheek_mat
+		cheek.position = Vector3(side * head_radius * 0.44, head_radius * -0.08, -head_radius * 0.52)
+		cheek.scale = Vector3(1.0, 0.80, 0.58)
+		cheek.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_mesh.add_child(cheek)
+
+		# Soft orange blush patch on each cheek.
+		var blush := MeshInstance3D.new()
+		blush.name = "Blush_" + ("L" if side < 0.0 else "R")
+		var blush_mesh := SphereMesh.new()
+		blush_mesh.radius = head_radius * 0.12
+		blush_mesh.height = head_radius * 0.06
+		blush_mesh.radial_segments = 18
+		blush_mesh.rings = 9
+		blush.mesh = blush_mesh
+		blush.material_override = blush_mat
+		blush.position = Vector3(side * head_radius * 0.41, head_radius * -0.14, -head_radius * 0.63)
+		blush.scale = Vector3(1.3, 0.65, 0.45)
+		blush.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_mesh.add_child(blush)
+
 func _add_eyes(head_radius: float, parent: Node3D) -> void:
 	# Large glossy almond-shaped eyes – golden-brown iris, wet/dewy look
 	var eye_white_mat := StandardMaterial3D.new()
@@ -510,12 +629,13 @@ func _add_eyes(head_radius: float, parent: Node3D) -> void:
 	eye_white_mat.rim_tint = 0.1
 
 	var iris_mat := StandardMaterial3D.new()
-	iris_mat.albedo_color = Color(0.12, 0.08, 0.04)  # Dark brown, almost black
+	# Brown/green stylized iris blend.
+	iris_mat.albedo_color = Color(0.30, 0.38, 0.12)
 	iris_mat.specular = 0.8
 	iris_mat.roughness = 0.12
 	iris_mat.rim_enabled = true
 	iris_mat.rim = 0.25
-	iris_mat.rim_tint = 0.15
+	iris_mat.rim_tint = 0.22
 
 	var pupil_mat := StandardMaterial3D.new()
 	pupil_mat.albedo_color = Color(0.02, 0.02, 0.02)
@@ -536,8 +656,10 @@ func _add_eyes(head_radius: float, parent: Node3D) -> void:
 	rim_mat.roughness = 0.25
 
 	for side in [-1.0, 1.0]:
+		var suffix := "L" if side < 0.0 else "R"
 		# White of the eye – almond shaped (squashed sphere)
 		var eye := MeshInstance3D.new()
+		eye.name = "Eye_" + suffix
 		var eye_s := SphereMesh.new()
 		eye_s.radius = 0.10
 		eye_s.height = 0.18
@@ -567,6 +689,7 @@ func _add_eyes(head_radius: float, parent: Node3D) -> void:
 
 		# Golden-brown iris – large and prominent
 		var iris := MeshInstance3D.new()
+		iris.name = "Iris_" + suffix
 		var iris_s := SphereMesh.new()
 		iris_s.radius = 0.072
 		iris_s.height = 0.08
@@ -577,9 +700,11 @@ func _add_eyes(head_radius: float, parent: Node3D) -> void:
 		iris.position = Vector3(side * 0.005, 0.035, -0.055)
 		iris.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		eye.add_child(iris)
+		_iris_nodes.append(iris)
 
 		# Black pupil
 		var pupil := MeshInstance3D.new()
+		pupil.name = "Pupil_" + suffix
 		var pupil_s := SphereMesh.new()
 		pupil_s.radius = 0.035
 		pupil_s.height = 0.04
@@ -590,6 +715,7 @@ func _add_eyes(head_radius: float, parent: Node3D) -> void:
 		pupil.position = Vector3(0.0, 0.0, -0.03)
 		pupil.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		iris.add_child(pupil)
+		_pupil_nodes.append(pupil)
 
 		# Large glossy highlight – wet/dewy
 		var hl := MeshInstance3D.new()
@@ -615,6 +741,113 @@ func _add_eyes(head_radius: float, parent: Node3D) -> void:
 		hl2.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		iris.add_child(hl2)
 
+func _add_eyelids(head_radius: float) -> void:
+	# Separate upper lids so expressions can be sculpted per state.
+	var lid_mat := StandardMaterial3D.new()
+	lid_mat.albedo_color = Color(0.49, 0.78, 0.16)
+	lid_mat.specular = 0.24
+	lid_mat.roughness = 0.56
+
+	for i in range(_eye_nodes.size()):
+		var eye := _eye_nodes[i]
+		var side := -1.0 if i == 0 else 1.0
+		var suffix := "L" if i == 0 else "R"
+		var lid := MeshInstance3D.new()
+		lid.name = "Eyelid_" + suffix
+		var lid_mesh := SphereMesh.new()
+		lid_mesh.radius = head_radius * 0.16
+		lid_mesh.height = head_radius * 0.08
+		lid_mesh.radial_segments = 16
+		lid_mesh.rings = 8
+		lid.mesh = lid_mesh
+		lid.material_override = lid_mat
+		lid.position = Vector3(side * 0.004, head_radius * 0.05, -head_radius * 0.12)
+		lid.scale = Vector3(1.10, 0.55, 0.38)
+		lid.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		eye.add_child(lid)
+		_eyelid_nodes.append(lid)
+
+func _add_simple_mouth(head_radius: float, parent: Node3D) -> void:
+	# Simple mouth rig: 3 independent parts for easy expression swapping.
+	var mouth_root := Node3D.new()
+	mouth_root.name = "MouthRoot"
+	mouth_root.position = Vector3(0.0, head_radius * -0.32, -head_radius * 0.88)
+	mouth_root.scale = Vector3(0.92, 0.92, 0.92)
+	parent.add_child(mouth_root)
+
+	var smile_mat := StandardMaterial3D.new()
+	smile_mat.albedo_color = Color(0.86, 0.34, 0.38)
+	smile_mat.specular = 0.32
+	smile_mat.roughness = 0.58
+
+	var inner_mat := StandardMaterial3D.new()
+	inner_mat.albedo_color = Color(0.28, 0.06, 0.08)
+	inner_mat.specular = 0.08
+	inner_mat.roughness = 0.90
+
+	var tongue_mat := StandardMaterial3D.new()
+	tongue_mat.albedo_color = Color(0.96, 0.53, 0.58)
+	tongue_mat.specular = 0.20
+	tongue_mat.roughness = 0.72
+
+	# Outer smile lip shell (visible rim/shape).
+	var smile := MeshInstance3D.new()
+	smile.name = "SmileMouth"
+	var smile_mesh := SphereMesh.new()
+	smile_mesh.radius = head_radius * 0.18
+	smile_mesh.height = head_radius * 0.10
+	smile_mesh.radial_segments = 20
+	smile_mesh.rings = 10
+	smile.mesh = smile_mesh
+	smile.material_override = smile_mat
+	smile.scale = Vector3(1.48, 0.66, 0.42)
+	smile.position = Vector3(0.0, 0.0, 0.0)
+	smile.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mouth_root.add_child(smile)
+	_smile_node = smile
+	_smile_base_scale = smile.scale
+	_smile_base_pos = smile.position
+
+	# Inner mouth cavity (dark opening) as separate mesh for animation/replacement.
+	var inner := MeshInstance3D.new()
+	inner.name = "InnerMouth"
+	var inner_mesh := SphereMesh.new()
+	inner_mesh.radius = head_radius * 0.14
+	inner_mesh.height = head_radius * 0.08
+	inner_mesh.radial_segments = 18
+	inner_mesh.rings = 9
+	inner.mesh = inner_mesh
+	inner.material_override = inner_mat
+	inner.scale = Vector3(1.30, 0.56, 0.30)
+	inner.position = Vector3(0.0, -head_radius * 0.01, -head_radius * 0.05)
+	inner.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mouth_root.add_child(inner)
+	_inner_mouth_node = inner
+	_inner_mouth_base_scale = inner.scale
+	_inner_mouth_base_pos = inner.position
+
+	# Tongue as its own object so variants can swap/animate independently.
+	var tongue := MeshInstance3D.new()
+	tongue.name = "Tongue"
+	var tongue_mesh := SphereMesh.new()
+	tongue_mesh.radius = head_radius * 0.09
+	tongue_mesh.height = head_radius * 0.06
+	tongue_mesh.radial_segments = 16
+	tongue_mesh.rings = 8
+	tongue.mesh = tongue_mesh
+	tongue.material_override = tongue_mat
+	tongue.scale = Vector3(1.20, 0.55, 0.34)
+	tongue.position = Vector3(0.0, -head_radius * 0.05, -head_radius * 0.07)
+	tongue.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mouth_root.add_child(tongue)
+	_tongue_node = tongue
+	_tongue_base_scale = tongue.scale
+	_tongue_base_pos = tongue.position
+
+	_mouth_node = mouth_root
+	_mouth_base_scale = mouth_root.scale
+	_mouth_base_pos = mouth_root.position
+
 func _add_eyebrows(head_radius: float, parent: Node3D) -> void:
 	# Small curved eyebrow arcs above each eye
 	var brow_mat := StandardMaterial3D.new()
@@ -624,6 +857,7 @@ func _add_eyebrows(head_radius: float, parent: Node3D) -> void:
 
 	for side in [-1.0, 1.0]:
 		var brow := MeshInstance3D.new()
+		brow.name = "Brow_" + ("L" if side < 0.0 else "R")
 		var brow_s := SphereMesh.new()
 		brow_s.radius = 0.07
 		brow_s.height = 0.03
@@ -684,14 +918,14 @@ func _add_mouth(head_radius: float, parent: Node3D) -> void:
 func _add_antennae(head_radius: float) -> void:
 	# Two cute antennae with little balls at the tips
 	var stalk_mat := StandardMaterial3D.new()
-	stalk_mat.albedo_color = Color(0.45, 0.70, 0.18)
+	stalk_mat.albedo_color = Color(0.18, 0.45, 0.14)
 	stalk_mat.specular = 0.2
-	stalk_mat.roughness = 0.7
+	stalk_mat.roughness = 0.62
 
 	var tip_mat := StandardMaterial3D.new()
-	tip_mat.albedo_color = Color(0.95, 0.85, 0.15)  # Yellow ball tips
-	tip_mat.specular = 0.4
-	tip_mat.roughness = 0.4
+	tip_mat.albedo_color = Color(0.36, 0.63, 0.18)  # Rounded green tips
+	tip_mat.specular = 0.32
+	tip_mat.roughness = 0.45
 
 	for side in [-1.0, 1.0]:
 		# Build antenna from multiple small segments that curve forward
@@ -865,32 +1099,80 @@ func _process(delta: float) -> void:
 						_idle_cycle_timer = 0.0
 						_expression = "looking"
 
-	# ── Blink (not while sleeping) ──
-	if not _eye_nodes.is_empty() and _expression != "sleeping":
-		if _is_blinking:
-			_blink_phase += delta * 8.0
-			var t: float
-			if _blink_phase < 1.0:
-				t = _blink_phase
-			elif _blink_phase < 2.0:
-				t = 2.0 - _blink_phase
-			else:
-				t = 0.0
-				_is_blinking = false
-				_blink_timer = 0.0
-				_blink_interval = randf_range(2.5, 5.0)
-			var y_scale := lerpf(1.0, 0.05, t)
-			for eye in _eye_nodes:
-				eye.scale.y = y_scale
-		else:
-			_blink_timer += delta
-			if _blink_timer >= _blink_interval:
-				_is_blinking = true
-				_blink_phase = 0.0
-	elif not _eye_nodes.is_empty():
-		# Eyes closed while sleeping
-		for eye in _eye_nodes:
-			eye.scale.y = lerpf(eye.scale.y, 0.05, delta * 3.0)
+	# Keep eye whites stable; eyelids now handle the visible fold/blink motion.
+	for eye in _eye_nodes:
+		eye.scale.y = lerpf(eye.scale.y, 1.0, delta * 8.0)
+
+	# ── Iris / pupil direction and eyelid pose by expression ──
+	for i in range(_iris_nodes.size()):
+		var iris := _iris_nodes[i]
+		var pupil := _pupil_nodes[i] if i < _pupil_nodes.size() else null
+		var side := -1.0 if i == 0 else 1.0
+		var iris_target := Vector3(side * 0.005, 0.035, -0.055)
+		var pupil_target := Vector3.ONE
+		match _expression:
+			"curious", "looking":
+				iris_target.y = 0.055
+				iris_target.x = side * 0.010
+				pupil_target = Vector3(1.05, 1.05, 1.0)
+			"tired", "sad":
+				iris_target.y = 0.010
+				pupil_target = Vector3(0.95, 1.10, 1.0)
+			"chewing":
+				iris_target.x = side * 0.012
+				iris_target.y = 0.028 + sin(_face_time * 9.0 + float(i)) * 0.004
+			"biting", "angry":
+				iris_target.x = side * -0.008
+				iris_target.y = 0.040
+				pupil_target = Vector3(1.10, 0.95, 1.0)
+			"sleeping":
+				iris_target.y = -0.010
+			"surprised", "dizzy":
+				iris_target.y = 0.044
+				pupil_target = Vector3(1.20, 1.20, 1.0)
+		iris.position = iris.position.lerp(iris_target, delta * 8.0)
+		if pupil:
+			pupil.scale = pupil.scale.lerp(pupil_target, delta * 8.0)
+
+	for i in range(_eyelid_nodes.size()):
+		var lid := _eyelid_nodes[i]
+		var side := -1.0 if i == 0 else 1.0
+		var target_y := 0.05
+		var target_sy := 0.55
+		match _expression:
+			"happy":
+				target_y = 0.06
+				target_sy = 0.52
+			"curious", "looking":
+				target_y = 0.08
+				target_sy = 0.46
+			"tired", "sad":
+				target_y = 0.015
+				target_sy = 0.70
+			"sleeping":
+				target_y = -0.015
+				target_sy = 0.85
+			"chewing":
+				target_y = 0.04 + sin(_face_time * 8.0 + float(i)) * 0.005
+				target_sy = 0.60
+			"biting", "angry":
+				target_y = 0.03
+				target_sy = 0.65
+			"surprised", "dizzy":
+				target_y = 0.085
+				target_sy = 0.42
+
+		# Slow fold cycle: eyelid goes from top toward bottom then back up.
+		if _expression != "sleeping":
+			var fold_phase: float = fposmod(_face_time * 0.22, 1.0)
+			var fold_amount: float = 1.0 - abs(fold_phase * 2.0 - 1.0)
+			fold_amount = smoothstep(0.0, 1.0, fold_amount) * 0.78
+			target_y = lerpf(target_y, -0.022, fold_amount)
+			target_sy = lerpf(target_sy, 0.92, fold_amount)
+
+		lid.position.y = lerpf(lid.position.y, target_y, delta * 8.0)
+		lid.position.x = lerpf(lid.position.x, side * 0.004, delta * 8.0)
+		lid.scale.y = lerpf(lid.scale.y, target_sy, delta * 8.0)
 
 	# ── Expression timer (extra-happy fades back to default happy) ──
 	# No longer needed since happy IS the default — remove fade-out.
@@ -906,17 +1188,65 @@ func _process(delta: float) -> void:
 				var idle_scale := _mouth_base_scale * s
 				_mouth_node.scale = _mouth_node.scale.lerp(idle_scale, delta * 5.0)
 			"happy":
-				var t := clampf(_expression_timer, 0.0, 1.0)
-				var happy_scale := _mouth_base_scale * lerpf(1.0, 1.4, t)
-				_mouth_node.scale = _mouth_node.scale.lerp(happy_scale, delta * 8.0)
-			"looking":
-				var pulse := sin(_face_time * 2.0) * 0.03
-				var look_scale := _mouth_base_scale * (0.85 + pulse)
+				# Stronger happy read: wider, fuller smile silhouette.
+				var smile_pulse := 1.08 + 0.05 * (0.5 + 0.5 * sin(_face_time * 4.0))
+				var happy_scale := _mouth_base_scale * Vector3(1.20 * smile_pulse, 1.10, 1.0)
+				_mouth_node.scale = _mouth_node.scale.lerp(happy_scale, delta * 7.0)
+			"curious", "looking", "surprised":
+				var pulse := sin(_face_time * 2.0) * 0.02
+				var look_scale := _mouth_base_scale * Vector3(0.82 + pulse, 0.92 + pulse, 0.92)
 				_mouth_node.scale = _mouth_node.scale.lerp(look_scale, delta * 4.0)
+			"tired", "sad":
+				var tired_scale := _mouth_base_scale * Vector3(0.86, 0.78, 0.90)
+				_mouth_node.scale = _mouth_node.scale.lerp(tired_scale, delta * 4.0)
 			"sleeping":
 				var sleep_breath := sin(_face_time * 0.8) * 0.04
 				var sleep_scale := _mouth_base_scale * (0.7 + sleep_breath)
 				_mouth_node.scale = _mouth_node.scale.lerp(sleep_scale, delta * 2.0)
+			"chewing":
+				var chew_pulse := 0.90 + 0.12 * (0.5 + 0.5 * sin(_face_time * 10.0))
+				var chew_scale := _mouth_base_scale * Vector3(1.04, chew_pulse, 1.0)
+				_mouth_node.scale = _mouth_node.scale.lerp(chew_scale, delta * 10.0)
+			"biting", "angry":
+				var bite_scale := _mouth_base_scale * Vector3(1.08, 0.86, 1.0)
+				_mouth_node.scale = _mouth_node.scale.lerp(bite_scale, delta * 8.0)
+			"dizzy":
+				var dizzy_scale := _mouth_base_scale * Vector3(0.88, 0.92, 1.0)
+				_mouth_node.scale = _mouth_node.scale.lerp(dizzy_scale, delta * 4.0)
+
+		# Per-part mouth shaping so expressions are clearly visible at gameplay distance.
+		if _smile_node:
+			var smile_scale_target := _smile_base_scale
+			var smile_y_target := _smile_base_pos.y
+			match _expression:
+				"happy":
+					smile_scale_target = _smile_base_scale * Vector3(1.38, 1.55, 1.0)
+					smile_y_target = _smile_base_pos.y + 0.010
+				"tired", "sleeping":
+					smile_scale_target = _smile_base_scale * Vector3(0.92, 0.72, 1.0)
+			_smile_node.scale = _smile_node.scale.lerp(smile_scale_target, delta * 8.0)
+			_smile_node.position.y = lerpf(_smile_node.position.y, smile_y_target, delta * 8.0)
+
+		if _inner_mouth_node:
+			var inner_scale_target := _inner_mouth_base_scale
+			var inner_y_target := _inner_mouth_base_pos.y
+			match _expression:
+				"happy":
+					inner_scale_target = _inner_mouth_base_scale * Vector3(1.28, 1.30, 1.0)
+					inner_y_target = _inner_mouth_base_pos.y + 0.006
+				"tired", "sleeping":
+					inner_scale_target = _inner_mouth_base_scale * Vector3(0.90, 0.75, 1.0)
+			_inner_mouth_node.scale = _inner_mouth_node.scale.lerp(inner_scale_target, delta * 8.0)
+			_inner_mouth_node.position.y = lerpf(_inner_mouth_node.position.y, inner_y_target, delta * 8.0)
+
+		if _tongue_node:
+			var tongue_scale_target := _tongue_base_scale
+			match _expression:
+				"happy":
+					tongue_scale_target = _tongue_base_scale * Vector3(1.05, 0.90, 1.0)
+				"tired", "sleeping":
+					tongue_scale_target = _tongue_base_scale * Vector3(0.92, 0.78, 1.0)
+			_tongue_node.scale = _tongue_node.scale.lerp(tongue_scale_target, delta * 8.0)
 
 	# ── Eyebrow animation ──
 	for i in _eyebrow_nodes.size():
@@ -927,12 +1257,20 @@ func _process(delta: float) -> void:
 				brow.rotation.z = lerpf(brow.rotation.z, side * -0.45, delta * 3.0)
 			"happy":
 				brow.rotation.z = lerpf(brow.rotation.z, side * -0.25, delta * 6.0)
-			"looking":
+			"curious", "looking":
 				var raise := 0.02 if i == 0 else 0.01
 				brow.rotation.z = lerpf(brow.rotation.z, side * (-0.20 - raise), delta * 4.0)
+			"tired", "sad":
+				brow.rotation.z = lerpf(brow.rotation.z, side * 0.20, delta * 4.0)
 			"sleeping":
 				# Relaxed / slightly lowered
 				brow.rotation.z = lerpf(brow.rotation.z, side * -0.05, delta * 2.0)
+			"chewing":
+				brow.rotation.z = lerpf(brow.rotation.z, side * (-0.28 + sin(_face_time * 9.0 + float(i)) * 0.04), delta * 8.0)
+			"biting", "angry":
+				brow.rotation.z = lerpf(brow.rotation.z, side * -0.72, delta * 8.0)
+			"surprised", "dizzy":
+				brow.rotation.z = lerpf(brow.rotation.z, side * -0.08, delta * 5.0)
 
 	# ── Cheek animation ──
 	for cheek in _cheek_nodes:
@@ -943,14 +1281,12 @@ func _process(delta: float) -> void:
 				cheek.scale = cheek.scale.lerp(Vector3.ONE, delta * 3.0)
 
 	# ── Head tilt ──
-	if _expression == "looking":
+	if _expression == "curious" or _expression == "looking":
 		if _mesh:
 			_mesh.rotation.x = lerpf(_mesh.rotation.x, -0.35, delta * 2.5)
 			_mesh.rotation.z = lerpf(_mesh.rotation.z, sin(_face_time * 0.8) * 0.1, delta * 2.0)
-		for eye in _eye_nodes:
-			if eye.get_child_count() > 0:
-				var iris := eye.get_child(0)
-				iris.position.y = lerpf(iris.position.y, 0.06, delta * 3.0)
+		for iris in _iris_nodes:
+			iris.position.y = lerpf(iris.position.y, 0.06, delta * 3.0)
 	elif _expression == "sleeping":
 		# Head droops slightly forward
 		if _mesh:
@@ -962,12 +1298,22 @@ func _process(delta: float) -> void:
 	else:
 		# Return head to normal
 		if _mesh:
-			_mesh.rotation.x = lerpf(_mesh.rotation.x, 0.0, delta * 3.0)
-			_mesh.rotation.z = lerpf(_mesh.rotation.z, 0.0, delta * 3.0)
-		for eye in _eye_nodes:
-			if eye.get_child_count() > 0:
-				var iris := eye.get_child(0)
-				iris.position.y = lerpf(iris.position.y, -0.02, delta * 2.0)
+			var target_rx := 0.0
+			var target_rz := 0.0
+			if _expression == "tired" or _expression == "sad":
+				target_rx = 0.10
+			elif _expression == "chewing":
+				target_rx = 0.03 + 0.02 * sin(_face_time * 9.0)
+				target_rz = 0.02 * sin(_face_time * 7.0)
+			elif _expression == "biting" or _expression == "angry":
+				target_rx = -0.06
+				target_rz = 0.03 * sin(_face_time * 8.0)
+			elif _expression == "dizzy":
+				target_rz = 0.10 * sin(_face_time * 5.5)
+			_mesh.rotation.x = lerpf(_mesh.rotation.x, target_rx, delta * 3.0)
+			_mesh.rotation.z = lerpf(_mesh.rotation.z, target_rz, delta * 3.0)
+		for iris in _iris_nodes:
+			iris.position.y = lerpf(iris.position.y, -0.02, delta * 2.0)
 
 func _spawn_zzz() -> void:
 	_clear_zzz()
@@ -1056,11 +1402,25 @@ func _clear_zzz() -> void:
 
 # ── Expression API (called from level_3d.gd) ──
 
+func _normalize_expression(expr: String) -> String:
+	match expr.to_lower():
+		"looking":
+			return "curious"
+		"surprised":
+			return "surprised"
+		"angry":
+			return "biting"
+		"sad":
+			return "tired"
+		_:
+			return expr.to_lower()
+
 func set_expression(expr: String, duration := 1.0) -> void:
 	if _expression == "sleeping":
 		_clear_zzz()
-	_expression = expr
+	_expression = _normalize_expression(expr)
 	_expression_timer = duration
+	_refresh_imported_head_for_expression()
 
 func set_idle(idle: bool) -> void:
 	if idle and not _is_idle:
@@ -1076,14 +1436,17 @@ func set_idle(idle: bool) -> void:
 		if _expression == "looking" or _expression == "sleeping":
 			_clear_zzz()
 			_expression = "happy"
+			_refresh_imported_head_for_expression()
 
 func look_at_camera() -> void:
 	_expression = "looking"
+	_refresh_imported_head_for_expression()
 
 func stop_looking() -> void:
 	if _expression == "looking" or _expression == "sleeping":
 		_clear_zzz()
 		_expression = "happy"
+		_refresh_imported_head_for_expression()
 
 # ── Animation callbacks (API kept for level_3d.gd) ──
 
@@ -1117,28 +1480,38 @@ func update_seg_type(new_type: String) -> void:
 	match new_type:
 		"head":
 			sphere.radius = 0.34
-			sphere.height = 0.34 * 2.1
+			sphere.height = 0.34 * 1.95
 			_mat = _make_body_gradient_material(0, false)
 			_mat.set_shader_parameter("show_stripes", false)
-			_mat.set_shader_parameter("pear_shape", 1.0)
+			_mat.set_shader_parameter("pear_shape", 0.35)
 			_mat.set_shader_parameter("segment_radius", 0.34)
-			_mat.set_shader_parameter("mid_color", Color(0.68, 0.90, 0.18))
+			_mat.set_shader_parameter("top_color", Color(0.56, 0.86, 0.18))
+			_mat.set_shader_parameter("mid_color", Color(0.46, 0.78, 0.15))
+			_mat.set_shader_parameter("bottom_color", Color(0.32, 0.62, 0.12))
 			_mat.set_shader_parameter("specular_amt", 0.55)
-			_mat.set_shader_parameter("roughness_amt", 0.35)
+			_mat.set_shader_parameter("roughness_amt", 0.32)
 			_base_mesh_y = 0.34 * 0.85 + 0.34 * 0.16
 			_mesh.position.y = _base_mesh_y
+			_mesh.scale = Vector3(1.0, 0.93, 1.0)
+			_mesh.visible = not _attach_imported_head(_expression)
 		"tail":
+			_clear_imported_head()
 			sphere.radius = 0.22
 			sphere.height = 0.385
 			_mat = _make_body_gradient_material(int(get_meta("seg_index", 0)), true)
 			_base_mesh_y = 0.22 * 0.85
 			_mesh.position.y = _base_mesh_y
+			_mesh.scale = Vector3.ONE
+			_mesh.visible = true
 		_:
+			_clear_imported_head()
 			sphere.radius = 0.28
 			sphere.height = 0.49
 			_mat = _make_body_gradient_material(int(get_meta("seg_index", 0)))
 			_base_mesh_y = 0.28 * 0.85
 			_mesh.position.y = _base_mesh_y
+			_mesh.scale = Vector3.ONE
+			_mesh.visible = true
 	_mesh.material_override = _mat
 
 func flash_red() -> void:

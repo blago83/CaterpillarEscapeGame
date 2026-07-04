@@ -1,0 +1,102 @@
+[
+  {
+    "file": "tired.glb",
+    "cluster_label": -2,
+    "center_xy": [
+      0.2539,
+      0.3233
+    ],
+    "parts": 33,
+    "triangles": 38600,
+    "old_file": "meshy_head_01.glb",
+    "grid_cell": [
+      0,
+      2
+    ]
+  },
+  {
+    "file": "sleeping.glb",
+    "cluster_label": 4,
+    "center_xy": [
+      -0.2575,
+      0.3345
+    ],
+    "parts": 36,
+    "triangles": 38794,
+    "old_file": "meshy_head_02.glb"
+  },
+  {
+    "file": "happy.glb",
+    "cluster_label": 1,
+    "center_xy": [
+      -0.737,
+      0.3228
+    ],
+    "parts": 42,
+    "triangles": 41728,
+    "old_file": "meshy_head_03.glb"
+  },
+  {
+    "file": "chewing.glb",
+    "cluster_label": 2,
+    "center_xy": [
+      0.7439,
+      0.3064
+    ],
+    "parts": 62,
+    "triangles": 44438,
+    "old_file": "meshy_head_04.glb"
+  },
+  {
+    "file": "curious.glb",
+    "cluster_label": -2,
+    "center_xy": [
+      0.2539,
+      -0.3321
+    ],
+    "parts": 45,
+    "triangles": 39550,
+    "old_file": "meshy_head_05.glb",
+    "grid_cell": [
+      1,
+      2
+    ]
+  },
+  {
+    "file": "surprised.glb",
+    "cluster_label": -2,
+    "center_xy": [
+      -0.2542,
+      -0.3321
+    ],
+    "parts": 64,
+    "triangles": 42400,
+    "old_file": "meshy_head_06.glb",
+    "grid_cell": [
+      1,
+      1
+    ]
+  },
+  {
+    "file": "dizzy.glb",
+    "cluster_label": 3,
+    "center_xy": [
+      0.7481,
+      -0.3244
+    ],
+    "parts": 54,
+    "triangles": 42852,
+    "old_file": "meshy_head_07.glb"
+  },
+  {
+    "file": "biting.glb",
+    "cluster_label": -1,
+    "center_xy": [
+      -0.734,
+      -0.3321
+    ],
+    "parts": 84,
+    "triangles": 54326,
+    "old_file": "meshy_head_08.glb"
+  }
+]
