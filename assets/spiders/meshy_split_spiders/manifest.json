@@ -1,0 +1,56 @@
+[
+  {
+    "file": "spider_01.glb",
+    "cluster_label": 4,
+    "center_xy": [
+      -0.0552,
+      0.3719
+    ],
+    "triangles": 70352
+  },
+  {
+    "file": "spider_02.glb",
+    "cluster_label": 0,
+    "center_xy": [
+      0.615,
+      0.3401
+    ],
+    "triangles": 74598
+  },
+  {
+    "file": "spider_03.glb",
+    "cluster_label": 2,
+    "center_xy": [
+      -0.6618,
+      0.3065
+    ],
+    "triangles": 40232
+  },
+  {
+    "file": "spider_04.glb",
+    "cluster_label": 5,
+    "center_xy": [
+      -0.0017,
+      -0.291
+    ],
+    "triangles": 67996
+  },
+  {
+    "file": "spider_05.glb",
+    "cluster_label": 1,
+    "center_xy": [
+      -0.6473,
+      -0.3131
+    ],
+    "triangles": 201336
+  },
+  {
+    "file": "spider_06.glb",
+    "cluster_label": 3,
+    "center_xy": [
+      0.6495,
+      -0.3599
+    ],
+    "triangles": 71036
+  }
+]

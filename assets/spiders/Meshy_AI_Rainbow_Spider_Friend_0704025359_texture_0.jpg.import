@@ -1,0 +1,44 @@
+[remap]
+
+importer="texture"
+type="CompressedTexture2D"
+uid="uid://cx1gxe48aly8q"
+path.s3tc="res://.godot/imported/Meshy_AI_Rainbow_Spider_Friend_0704025359_texture_0.jpg-49b72d0605dd6e436eb2de559f7e53e0.s3tc.ctex"
+metadata={
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
+}
+generator_parameters={
+"md5": "85b495e3793f03dffc8f22c5c0be2bda"
+}
+
+[deps]
+
+source_file="res://assets/spiders/Meshy_AI_Rainbow_Spider_Friend_0704025359_texture_0.jpg"
+dest_files=["res://.godot/imported/Meshy_AI_Rainbow_Spider_Friend_0704025359_texture_0.jpg-49b72d0605dd6e436eb2de559f7e53e0.s3tc.ctex"]
+
+[params]
+
+compress/mode=2
+compress/high_quality=false
+compress/lossy_quality=0.7
+compress/uastc_level=0
+compress/rdo_quality_loss=0.0
+compress/hdr_compression=1
+compress/normal_map=0
+compress/channel_pack=0
+mipmaps/generate=true
+mipmaps/limit=-1
+roughness/mode=0
+roughness/src_normal=""
+process/channel_remap/red=0
+process/channel_remap/green=1
+process/channel_remap/blue=2
+process/channel_remap/alpha=3
+process/fix_alpha_border=true
+process/premult_alpha=false
+process/normal_map_invert_y=false
+process/hdr_as_srgb=false
+process/hdr_clamp_exposure=false
+process/size_limit=0
+detect_3d/compress_to=0

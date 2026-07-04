@@ -9,6 +9,11 @@ const BUSH_BOTTOM := Color(0.22, 0.48, 0.12)
 # Camera offset from the look-at target (gives that ~-52°, -32° perspective feel)
 const CAM_OFFSET := Vector3(0.1, 9.0, 7.5)
 const CAM_FOV := 54.0
+const CAM_EDGE_PAD_LEFT := 1.6
+const CAM_EDGE_PAD_RIGHT := 0.0
+const CAM_EDGE_PAD_TOP := 0.0
+const CAM_EDGE_PAD_BOTTOM := 4.8
+const CAM_TOP_FOLLOW_PIN_Z := 6.0
 
 const Segment3DScript := preload("res://scripts/segment_3d.gd")
 const Leaf3DScript := preload("res://scripts/leaf_3d.gd")
@@ -192,6 +197,7 @@ var _cell_wall_index: Dictionary = {}     # cell -> int index in wall MultiMesh
 var _cell_wall_scales: Dictionary = {}    # cell -> Vector2 (w_scale, h_scale) from MM build
 var _cell_lump_range: Dictionary = {}     # cell -> Vector2i (lump start, end) in lump MultiMesh
 var _bite_cavity_mat: StandardMaterial3D = null
+var _spider_rng := RandomNumberGenerator.new()
 
 # ── Sounds ──
 var _snd_move: AudioStreamPlayer
@@ -217,6 +223,29 @@ func _ready() -> void:
 	$CanvasLayer/HUD/TopBar/MenuButton.pressed.connect(_on_menu)
 	$CanvasLayer/WinPanel/VBox/NextButton.pressed.connect(_on_next)
 	load_level(current_level)
+
+func _clamp_cam_look_target(target: Vector3) -> Vector3:
+	var min_x := CAM_EDGE_PAD_LEFT * CELL
+	var max_x := (float(_maze_w) - 1.0 - CAM_EDGE_PAD_RIGHT) * CELL
+	var min_z := CAM_EDGE_PAD_TOP * CELL
+	var max_z := (float(_maze_h) - 1.0 - CAM_EDGE_PAD_BOTTOM) * CELL
+	var pinned_min_z := maxf(min_z, CAM_TOP_FOLLOW_PIN_Z * CELL)
+
+	if max_x < min_x:
+		var cx := (float(_maze_w) - 1.0) * CELL * 0.5
+		min_x = cx
+		max_x = cx
+	if max_z < min_z:
+		var cz := (float(_maze_h) - 1.0) * CELL * 0.5
+		min_z = cz
+		max_z = cz
+		pinned_min_z = cz
+	elif pinned_min_z > max_z:
+		pinned_min_z = max_z
+
+	target.x = clampf(target.x, min_x, max_x)
+	target.z = clampf(target.z, pinned_min_z, max_z)
+	return target
 
 func _init_sounds() -> void:
 	var sound_map := {
@@ -438,6 +467,7 @@ func load_level(idx: int) -> void:
 	_clear()
 	current_level = idx % LEVELS.size()
 	leaves_left = 0
+	_spider_rng.randomize()
 	var rows: Array = LEVELS[current_level]
 
 	_maze_h = rows.size()
@@ -490,7 +520,7 @@ func load_level(idx: int) -> void:
 	)
 
 	var head_pos := _pos(player_cell)
-	_cam_look_target = Vector3(head_pos.x, 0.8, head_pos.z)
+	_cam_look_target = _clamp_cam_look_target(Vector3(head_pos.x, 0.8, head_pos.z))
 	cam.position = _cam_look_target + CAM_OFFSET
 	cam.look_at(_cam_look_target, Vector3.UP)
 	cam.current = true
@@ -821,6 +851,7 @@ func _make_leaf(cell: Vector2i) -> void:
 
 func _make_spider(cell: Vector2i) -> void:
 	var node := Node3D.new()
+	node.set_meta("spider_variant", _spider_rng.randi_range(0, 5))
 	node.set_script(Spider3DScript)
 	node.position = _pos(cell)
 	objects_layer.add_child(node)
@@ -845,6 +876,9 @@ func _rebuild_caterpillar() -> void:
 		node.set_script(Segment3DScript)
 		node.set_meta("seg_type", _seg_type(i))
 		node.set_meta("seg_index", i)
+		node.add_to_group("caterpillar_segment_3d")
+		if i == 0:
+			node.add_to_group("player_head_3d")
 		cat_layer.add_child(node)
 		segment_nodes.append(node)
 	_update_positions()
@@ -1126,7 +1160,7 @@ func _process(delta: float) -> void:
 		_p_was_pressed = false
 
 	# Smooth camera follow – lerp look target, recompute position + look_at
-	var new_look := _cam_look_target
+	var new_look := _clamp_cam_look_target(_cam_look_target)
 	var current_look := cam.position - CAM_OFFSET
 	current_look = current_look.lerp(new_look, minf(delta * 12.0, 1.0))
 	cam.position = current_look + CAM_OFFSET
@@ -1275,7 +1309,7 @@ func _move_backward() -> void:
 	_segment_targets = _calc_positions()
 	_segment_target_rots = _calc_target_rotations()
 	var head3 := _pos(segment_cells[0])
-	_cam_look_target = Vector3(head3.x, 0.8, head3.z)
+	_cam_look_target = _clamp_cam_look_target(Vector3(head3.x, 0.8, head3.z))
 
 	# When reversing, the tail is the leading end — check it for pickups/hazards
 	var lead_cell := new_tail
@@ -1336,7 +1370,7 @@ func _move_to(target: Vector2i) -> void:
 	_segment_targets = _calc_positions()
 	_segment_target_rots = _calc_target_rotations()
 	var tgt3 := _pos(target)
-	_cam_look_target = Vector3(tgt3.x, 0.8, tgt3.z)
+	_cam_look_target = _clamp_cam_look_target(Vector3(tgt3.x, 0.8, tgt3.z))
 
 	# Collect leaf
 	if leaves.has(target):
