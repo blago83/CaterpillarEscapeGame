@@ -1079,6 +1079,7 @@ func _process(delta: float) -> void:
 		# Sleep after being idle long enough
 		if _idle_time >= IDLE_SLEEP_START and _expression != "sleeping":
 			_expression = "sleeping"
+			_refresh_imported_head_for_expression()
 			_spawn_zzz()
 		elif _idle_time < IDLE_SLEEP_START:
 			# Cycle: wait -> look at camera -> wait -> look again
@@ -1088,16 +1089,19 @@ func _process(delta: float) -> void:
 						_idle_phase = 1
 						_idle_cycle_timer = 0.0
 						_expression = "looking"
+						_refresh_imported_head_for_expression()
 				1:  # Looking at camera
 					if _idle_cycle_timer >= IDLE_LOOK_DURATION:
 						_idle_phase = 2
 						_idle_cycle_timer = 0.0
 						_expression = "happy"
+						_refresh_imported_head_for_expression()
 				2:  # Pause between looks
 					if _idle_cycle_timer >= IDLE_PAUSE:
 						_idle_phase = 1
 						_idle_cycle_timer = 0.0
 						_expression = "looking"
+						_refresh_imported_head_for_expression()
 
 	# Keep eye whites stable; eyelids now handle the visible fold/blink motion.
 	for eye in _eye_nodes:
@@ -1162,13 +1166,21 @@ func _process(delta: float) -> void:
 				target_y = 0.085
 				target_sy = 0.42
 
-		# Slow fold cycle: eyelid goes from top toward bottom then back up.
-		if _expression != "sleeping":
+		# Happy gets a dedicated slow eyelid slide cycle (close -> open).
+		if _expression == "happy":
+			var happy_phase: float = fposmod(_face_time * 0.12, 1.0)
+			var happy_close: float = 1.0 - abs(happy_phase * 2.0 - 1.0)
+			happy_close = smoothstep(0.0, 1.0, happy_close)
+			happy_close = pow(happy_close, 1.2) * 0.95
+			target_y = lerpf(0.06, -0.045, happy_close)
+			target_sy = lerpf(0.52, 1.04, happy_close)
+		elif _expression != "sleeping":
+			# Keep a lighter generic fold for non-sleeping, non-happy expressions.
 			var fold_phase: float = fposmod(_face_time * 0.22, 1.0)
 			var fold_amount: float = 1.0 - abs(fold_phase * 2.0 - 1.0)
-			fold_amount = smoothstep(0.0, 1.0, fold_amount) * 0.78
-			target_y = lerpf(target_y, -0.022, fold_amount)
-			target_sy = lerpf(target_sy, 0.92, fold_amount)
+			fold_amount = smoothstep(0.0, 1.0, fold_amount) * 0.62
+			target_y = lerpf(target_y, -0.018, fold_amount)
+			target_sy = lerpf(target_sy, 0.86, fold_amount)
 
 		lid.position.y = lerpf(lid.position.y, target_y, delta * 8.0)
 		lid.position.x = lerpf(lid.position.x, side * 0.004, delta * 8.0)
@@ -1339,7 +1351,8 @@ func _spawn_single_z() -> void:
 	z_node.set_meta("zzz_age", 0.0)
 	z_node.set_meta("zzz_lifetime", 3.0)
 	z_node.set_meta("zzz_drift_x", randf_range(-0.06, 0.12))
-	_mesh.add_child(z_node)
+	var z_anchor: Node3D = _imported_head if _imported_head and is_instance_valid(_imported_head) else _mesh
+	z_anchor.add_child(z_node)
 	_zzz_nodes.append(z_node)
 
 var _zzz_spawn_timer := 0.0

@@ -180,6 +180,9 @@ var _bite_target: Vector2i = Vector2i(-999, -999)  # cell being bitten
 var _bite_count: Dictionary = {} # cell -> int (accumulated bites)
 var _bite_timer := 0.0           # countdown for current bite
 var _is_biting := false
+var _bite_face_loop_timer := 0.0
+var _bite_face_is_biting := true
+const BITE_FACE_LOOP_INTERVAL := 0.45
 var _wall_mm_inst: MultiMeshInstance3D = null
 var _lump_mm_inst: MultiMeshInstance3D = null
 var _bite_marks: Array[Node3D] = []  # legacy bite visual nodes
@@ -1166,12 +1169,21 @@ func _process(delta: float) -> void:
 	if _move_anim_remaining <= 0.0 and (not is_busy or not _allow_busy_release):
 		_set_move_sound_active(false)
 
+	# Keep bite mood authoritative: no idle look/sleep while chewing/biting.
+	if _is_biting:
+		_idle_timer = 0.0
+		if _is_looking_at_camera:
+			_is_looking_at_camera = false
+			if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_idle"):
+				segment_nodes[0].set_idle(false)
+
 	# ── Idle detection: tell head segment it's idle ──
-	_idle_timer += delta
-	if _idle_timer >= IDLE_LOOK_DELAY and not _is_looking_at_camera:
-		_is_looking_at_camera = true
-		if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_idle"):
-			segment_nodes[0].set_idle(true)
+	if not _is_biting:
+		_idle_timer += delta
+		if _idle_timer >= IDLE_LOOK_DELAY and not _is_looking_at_camera:
+			_is_looking_at_camera = true
+			if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_idle"):
+				segment_nodes[0].set_idle(true)
 
 	var dir := _get_held_dir()
 	if dir == Vector2i.ZERO:
@@ -1394,6 +1406,8 @@ func _start_bite() -> void:
 	_bite_target = target_cell
 	_is_biting = true
 	_bite_timer = BITE_DURATION
+	_bite_face_loop_timer = BITE_FACE_LOOP_INTERVAL
+	_bite_face_is_biting = true
 	is_busy = true
 
 	# Apply the bite immediately on press, then keep chewing animation/sound.
@@ -1411,13 +1425,19 @@ func _start_bite() -> void:
 	if _snd_bite:
 		_snd_bite.pitch_scale = 1.0
 		_snd_bite.play()
-	# Chewing expression
+	# Start with biting, then alternate biting/chewing until bite ends.
 	if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_expression"):
-		segment_nodes[0].set_expression("happy", BITE_DURATION)
+		segment_nodes[0].set_expression("biting", BITE_FACE_LOOP_INTERVAL)
 
 func _process_bite(delta: float) -> void:
 	if not _is_biting:
 		return
+	_bite_face_loop_timer -= delta
+	if _bite_face_loop_timer <= 0.0:
+		_bite_face_loop_timer += BITE_FACE_LOOP_INTERVAL
+		_bite_face_is_biting = not _bite_face_is_biting
+		if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_expression"):
+			segment_nodes[0].set_expression("biting" if _bite_face_is_biting else "chewing", BITE_FACE_LOOP_INTERVAL)
 	_bite_timer -= delta
 	# Head wiggle while biting
 	if segment_nodes.size() > 0:
@@ -1428,6 +1448,10 @@ func _process_bite(delta: float) -> void:
 
 func _finish_bite() -> void:
 	_is_biting = false
+	_bite_face_loop_timer = 0.0
+	_bite_face_is_biting = true
+	if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_expression"):
+		segment_nodes[0].set_expression("happy", 0.6)
 	is_busy = false
 
 func _ensure_bite_cavity_material() -> StandardMaterial3D:
@@ -1568,23 +1592,19 @@ func _eat_wall(cell: Vector2i) -> void:
 	if _lump_mm_inst:
 		_lump_mm_inst.queue_free()
 		_lump_mm_inst = null
-	# Flatten the individual bush to a near-zero stump so it persists as a ground marker
+	# Remove the standalone bitten bush completely once eaten.
 	var bush_node: Node3D = _bitten_bush_nodes.get(cell)
 	if bush_node and is_instance_valid(bush_node):
-		var h_orig: float = _bitten_bush_hscale.get(cell, 1.0)
-		var tw := create_tween()
-		tw.set_parallel(true)
-		tw.tween_property(bush_node, "scale:y", 0.04, 0.3) \
-			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-		tw.tween_property(bush_node, "position:y", WALL_HEIGHT * 0.02 * h_orig, 0.3) \
-			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		bush_node.queue_free()
+	_bitten_bush_nodes.erase(cell)
+	_bitten_bush_hscale.erase(cell)
 	# Legacy bite-mark nodes are no longer used for the primary effect.
 	_bite_marks.clear()
 	# Rebuild wall meshes
 	_build_wall_multimesh()
 	# Happy munch expression
 	if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_expression"):
-		segment_nodes[0].set_expression("happy", 1.5)
+		segment_nodes[0].set_expression("biting", 1.5)
 
 func _lose() -> void:
 	hud_label.text = "Ouch! Restarting..."
