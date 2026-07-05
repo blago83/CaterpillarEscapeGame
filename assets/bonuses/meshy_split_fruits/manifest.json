@@ -1,0 +1,52 @@
+[
+  {
+    "file": "fruit_01.glb",
+    "fruit_name": "apple",
+    "cluster_label": 0,
+    "center_xy": [
+      -0.6848,
+      0.5187
+    ],
+    "triangles": 78688
+  },
+  {
+    "file": "fruit_02.glb",
+    "fruit_name": "cherry",
+    "cluster_label": 4,
+    "center_xy": [
+      0.7143,
+      0.4681
+    ],
+    "triangles": 72609
+  },
+  {
+    "file": "fruit_03.glb",
+    "fruit_name": "peach",
+    "cluster_label": 1,
+    "center_xy": [
+      0.0062,
+      0.412
+    ],
+    "triangles": 60496
+  },
+  {
+    "file": "fruit_04.glb",
+    "fruit_name": "pear",
+    "cluster_label": 2,
+    "center_xy": [
+      0.3892,
+      -0.3912
+    ],
+    "triangles": 137761
+  },
+  {
+    "file": "fruit_05.glb",
+    "fruit_name": "grape",
+    "cluster_label": 3,
+    "center_xy": [
+      -0.3908,
+      -0.426
+    ],
+    "triangles": 71312
+  }
+]

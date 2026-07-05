@@ -1,7 +1,6 @@
-[gd_scene load_steps=3 format=3 uid="uid://mainmenu"]
+[gd_scene load_steps=2 format=3 uid="uid://mainmenu"]
 
 [ext_resource type="Script" path="res://scripts/main_menu.gd" id="1_script"]
-[ext_resource type="Texture2D" path="res://assets/New/Center.png" id="2_splash"]
 
 [node name="MainMenu" type="Control"]
 layout_mode = 3
@@ -19,60 +18,77 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-color = Color(0.18, 0.42, 0.14, 1)
+color = Color(0.07, 0.1, 0.06, 1)
 
-[node name="Splash" type="TextureRect" parent="."]
-layout_mode = 1
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
-texture = ExtResource("2_splash")
-expand_mode = 1
-stretch_mode = 6
-modulate = Color(1, 1, 1, 0.78)
-
-[node name="VBox" type="VBoxContainer" parent="."]
+[node name="Glow" type="ColorRect" parent="."]
 layout_mode = 1
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
 anchor_right = 0.5
 anchor_bottom = 0.5
-offset_left = -250.0
-offset_top = -200.0
-offset_right = 250.0
-offset_bottom = 200.0
+offset_left = -420.0
+offset_top = -480.0
+offset_right = 420.0
+offset_bottom = 480.0
 grow_horizontal = 2
 grow_vertical = 2
-theme_override_constants/separation = 30
+color = Color(0.13, 0.26, 0.11, 0.45)
 
-[node name="Title" type="Label" parent="VBox"]
+[node name="Card" type="PanelContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -280.0
+offset_top = -310.0
+offset_right = 280.0
+offset_bottom = 310.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="Card"]
 layout_mode = 2
-theme_override_font_sizes/font_size = 64
-text = "🐛 Caterpillar
-Escape"
+theme_override_constants/separation = 20
+
+[node name="Title" type="Label" parent="Card/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 58
+text = "CATERPILLAR ESCAPE"
 horizontal_alignment = 1
 
-[node name="Spacer" type="Control" parent="VBox"]
-custom_minimum_size = Vector2(0, 40)
+[node name="Subtitle" type="Label" parent="Card/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 24
+text = "Fog maze campaign with hazards and bonuses"
+horizontal_alignment = 1
+
+[node name="Spacer" type="Control" parent="Card/VBox"]
+custom_minimum_size = Vector2(0, 18)
 layout_mode = 2
 
-[node name="PlayButton" type="Button" parent="VBox"]
-custom_minimum_size = Vector2(0, 80)
+[node name="PlayCampaignButton" type="Button" parent="Card/VBox"]
+custom_minimum_size = Vector2(0, 86)
 layout_mode = 2
-theme_override_font_sizes/font_size = 36
-text = "Play"
+theme_override_font_sizes/font_size = 34
+text = "Play Campaign"
 
-[node name="TestButton" type="Button" parent="VBox"]
-custom_minimum_size = Vector2(0, 72)
+[node name="Level0TestButton" type="Button" parent="Card/VBox"]
+custom_minimum_size = Vector2(0, 76)
 layout_mode = 2
-theme_override_font_sizes/font_size = 30
+theme_override_font_sizes/font_size = 28
 text = "Level 0 Test"
 
-[node name="QuitButton" type="Button" parent="VBox"]
-custom_minimum_size = Vector2(0, 80)
+[node name="QuitButton" type="Button" parent="Card/VBox"]
+custom_minimum_size = Vector2(0, 76)
 layout_mode = 2
-theme_override_font_sizes/font_size = 36
+theme_override_font_sizes/font_size = 28
 text = "Quit"
+
+[node name="Footer" type="Label" parent="Card/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 18
+text = "WASD or arrows to move. Space to bite walls."
+horizontal_alignment = 1

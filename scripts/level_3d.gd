@@ -1,7 +1,7 @@
 extends Node3D
 
 const CELL := 1.0
-const WALL_HEIGHT := 0.60
+const WALL_HEIGHT := 0.45
 const GROUND_COLOR := Color(0.76, 0.70, 0.50)
 const BUSH_TOP := Color(0.48, 0.70, 0.15)
 const BUSH_BOTTOM := Color(0.22, 0.48, 0.12)
@@ -14,6 +14,52 @@ const CAM_EDGE_PAD_RIGHT := 0.0
 const CAM_EDGE_PAD_TOP := 0.0
 const CAM_EDGE_PAD_BOTTOM := 4.8
 const CAM_TOP_FOLLOW_PIN_Z := 6.0
+const REVEAL_RADIUS_BY_LEVEL := [6.0, 5.2, 4.2]
+
+const FOG_HIDDEN := 0
+const FOG_DISCOVERED := 1
+const FOG_VISIBLE := 2
+
+const LANTERN_BONUS_RADIUS := 2.4
+const LANTERN_BONUS_SECONDS := 18.0
+const GLOW_LEAF_RADIUS_BONUS := 0.5
+const MAP_FLOWER_REVEAL_RADIUS := 4.0
+const LEAF_COMBO_WINDOW := 5.0
+const LEAF_COMBO_REVEAL_BONUS := 0.8
+const LEAF_COMBO_REVEAL_SECONDS := 6.0
+const LEAF_COMBO_SPEED_SECONDS := 4.0
+const LEAF_COMBO_SPEED_MULT := 1.25
+const FOG_TEX_SCALE := 1
+const SHOE_SPEED_MULT := 1.45
+const FRUIT_VARIANT_DIR := "res://assets/bonuses/meshy_split_fruits"
+const FRUIT_VARIANT_COUNT := 5
+const LEVEL_BACKGROUND_DIR := "res://assets/backgrounds"
+const DEFAULT_GROUND_TEXTURE := "res://assets/background_sand.png"
+const ROCK_WALL_RATIO := 0.80
+const MIN_BUSH_WALLS := 12
+const MUSHROOM_VARIANT_DIR := "res://assets/mushrooms"
+const MUSHROOM_SIZE_MULT := 2.45
+const SPIDER_MOVE_INTERVAL := 1.2
+const SPIDER_CHASE_RADIUS := 4.0
+const SPIDER_ROAM_MOVE_CHANCE := 0.5
+const SPIDER_CHASE_MOVE_CHANCE := 0.75
+const SPIDER_TRAVEL_TIME := 0.85
+const EXIT_CLEAR_RADIUS := 1
+const EXIT_SAFE_SPAWN_RADIUS := 2
+const PLAYER_SAFE_SPAWN_RADIUS := 6
+const DOUBLE_WIDE_SIDE_SPIKE_CHANCE := 0.45
+const WORMHOLE_PAIR_COUNT := 1
+const WORMHOLE_MIN_PAIR_DISTANCE := 8
+const WORMHOLE_TELEPORT_COOLDOWN := 0.45
+const DIZZY_DURATION := 5.0
+const DIZZY_SPEED_MULT := 0.55
+const FRUIT_VARIANT_NAMES := ["Apple", "Cherry", "Peach", "Pear", "Grape"]
+# Some levels can require specific fruit pickups as a win objective.
+const LEVEL_FRUIT_OBJECTIVES := {
+	3: {"apple": 1, "pear": 1},
+	4: {"cherry": 1, "grape": 1},
+	5: {"peach": 1, "grape": 1},
+}
 
 const Segment3DScript := preload("res://scripts/segment_3d.gd")
 const Leaf3DScript := preload("res://scripts/leaf_3d.gd")
@@ -21,7 +67,7 @@ const Spider3DScript := preload("res://scripts/spider_3d.gd")
 const Exit3DScript := preload("res://scripts/exit_portal_3d.gd")
 
 # Large mazes with consistent rectangular bounds.
-# Legend: # wall, . path, P player, L leaf, S spider, E exit
+# Legend: # wall, . path, P player, L leaf, S spider, ^ spike, E exit
 const LEVELS := [
 [
 "#######################",
@@ -45,7 +91,7 @@ const LEVELS := [
 "#.#######.#########.#.#",
 "#...#...#.....#.....#.#",
 "###.#.#.#####.#.#####.#",
-"#P..#.#...S...#.....E##",
+"#P..#.#...S...#.....E.#",
 "#######################",
 ],
 [
@@ -132,6 +178,115 @@ const LEVELS := [
 "#P...S....L.....#.......L...E.#",
 "###############################",
 ],
+[
+"#######################",
+"#.....#.....#.....#...#",
+"###.#.#.###.#.###.#.#.#",
+"#...#.#...#...#...#.#.#",
+"#.###.###.#####.###.#.#",
+"#...#...#.....#...#.#.#",
+"#.#.###.#####.###.#.#.#",
+"#.#...#..^L...#...#...#",
+"#.###.###.###.#.#####.#",
+"#...#.....#...#.....#.#",
+"###.#######.#######.#.#",
+"#...#.....#.....#...#.#",
+"#.###.###.#####.#.###.#",
+"#.....#.#...#...#.^L#.#",
+"#.#####.###.#.#####.#.#",
+"#.#...#.....#...#...#.#",
+"#.#.#.#########.#.###.#",
+"#...#.....L.....#...#.#",
+"#.#######.#########.#.#",
+"#...#...#.....#.....#.#",
+"###.#.#.#####.#.#####.#",
+"#P..#.#...S..^#.....E##",
+"#######################",
+],
+[
+"###########################",
+"#.....#.......#.....#.....#",
+"###.#.#.#####.#.###.#.###.#",
+"#...#.#.....#.#...#.#...#.#",
+"#.###.#####.#.###.#.###.#.#",
+"#.#...#...#.#...#.#...#...#",
+"#.#.###.#.#.###.#.###.###.#",
+"#.#.....#.#..^..#...#...#.#",
+"#.#######.#########.###.#.#",
+"#.....#...#...L...#.....#.#",
+"#####.#.###.#####.#######.#",
+"#...#.#...#.....#.......#.#",
+"#.#.#.###.#####.#######.#.#",
+"#.#.#...#.L...#.#.....#.#.#",
+"#.#.###.#####.#.#.###.#.#.#",
+"#.#...#.....#.#.#.#...#...#",
+"#.###.#####.#.#.#.#.#####.#",
+"#...#...#...#...#.#.....#.#",
+"###.###.#.#######.#####.#.#",
+"#...#...#.......#.....#.#.#",
+"#.###.#########.#.###.#.#.#",
+"#.#...#.....#...#.#...#.#.#",
+"#.#.###.###.#.###.#.###.#.#",
+"#.#.....#...#...#.#...#.#.#",
+"#.#######.#.###.#.###.#.#.#",
+"#.......#.#...#.#.#...#...#",
+"#####.#.#.###.#.#.#.#####.#",
+"#...#.#.#...#.#...#.....#.#",
+"#.#.#.#.###.#.#########.#.#",
+"#.#.#.#...#.#.....#...#.#.#",
+"#.#.#.###.#.#####.#.#.#.#.#",
+"#.#.#...#.#.....#.#.#...#.#",
+"#.#.###.#.#####.#.#.#####.#",
+"#.#..S#.#.....#.#.#..^..#.#",
+"#.###.#.#####.#.#.#####.#.#",
+"#...#.#.....#...#.....#...#",
+"###.#.#################.###",
+"#P..#......L.......^...E..#",
+"###########################",
+],
+[
+"###############################",
+"#.....#.......#.......#.......#",
+"###.#.#.#####.#.#####.#.#####.#",
+"#...#.#.....#...#...#...#...#.#",
+"#.###.#####.#####.#.#####.#.#.#",
+"#.#...#...#.....#.#.....#.#.#.#",
+"#.#.###.#.#####.#.#####.#.#.#.#",
+"#.#...#.#...^...#.....#.#...#.#",
+"#.###.#.###########.#.#.#####.#",
+"#...#.#.....#.......#.#.....#.#",
+"###.#.#####.#.#######.#####.#.#",
+"#...#.....#.#...#...#.....#.#.#",
+"#.#######.#.###.#.#.#####.#.#.#",
+"#.......#.#...#...#...#...#...#",
+"#.#####.#.###.#######.#.#####.#",
+"#.#...#.#...#.....#...#.....#.#",
+"#.#.#.#.###.#####.#.#######.#.#",
+"#.#.#...#...#...#.#.#...#...#.#",
+"#.#.#####.###.#.#.#.#.#.#.###.#",
+"#.#.....#..L..#.#.#...#.#...#.#",
+"#.#####.#######.#.#####.###.#.#",
+"#.....#.#.....#.#.....#.#...#.#",
+"#####.#.#.###.#.#####.#.#.###.#",
+"#...#.#.#.#...#.....#.#.#...#.#",
+"#.#.#.#.#.#.#######.#.#.###.#.#",
+"#.#...#...#.......#.#...#...#.#",
+"#.#########.#####.#.#####.###.#",
+"#.....#.....#...#.#.....#...#.#",
+"###.#.#.#####.#.#.#####.###.#.#",
+"#...#.#.....#.#.#.....#...#.#.#",
+"#.###.#####.#.#.#####.###.#.#.#",
+"#...#.#...#.#.#.#...#.#...#.#.#",
+"###.#.#.#.#.#.#.#.#.#.#.###.#.#",
+"#...#...#...#...#.#...#...#.#.#",
+"#.###############.#######.#.#.#",
+"#.....#.....#.....#.....#.#.#.#",
+"#####.#.###.#.#####.###.#.#.#.#",
+"#.....#...#...#...#...#...#.#.#",
+"#.#######.#####.#.###.#####.#.#",
+"#P..S..^..L.....#...^...L..E.#",
+"###############################",
+],
 ]
 
 var current_level: int = 0
@@ -165,6 +320,7 @@ var _maze_h: int = 0
 
 # Shared resources for performance
 var _wall_mat: ShaderMaterial
+var _rock_mat: ShaderMaterial
 var _wall_mesh: BoxMesh
 var _ground_mat: StandardMaterial3D
 var _cam_look_target := Vector3.ZERO
@@ -189,15 +345,53 @@ var _bite_face_loop_timer := 0.0
 var _bite_face_is_biting := true
 const BITE_FACE_LOOP_INTERVAL := 0.45
 var _wall_mm_inst: MultiMeshInstance3D = null
+var _rock_mm_inst: MultiMeshInstance3D = null
 var _lump_mm_inst: MultiMeshInstance3D = null
+var _fog_mm_inst: MeshInstance3D = null
 var _bite_marks: Array[Node3D] = []  # legacy bite visual nodes
 var _bitten_bush_nodes: Dictionary = {}   # cell -> Node3D (individual bitten bush root)
 var _bitten_bush_hscale: Dictionary = {}  # cell -> float (original h_scale)
 var _cell_wall_index: Dictionary = {}     # cell -> int index in wall MultiMesh
+var _rock_cell_wall_index: Dictionary = {}     # cell -> int index in rock wall MultiMesh
 var _cell_wall_scales: Dictionary = {}    # cell -> Vector2 (w_scale, h_scale) from MM build
 var _cell_lump_range: Dictionary = {}     # cell -> Vector2i (lump start, end) in lump MultiMesh
+var _bush_wall_cells: Dictionary = {}      # cell -> true (edible)
+var _rock_wall_cells: Dictionary = {}      # cell -> true (non-edible)
 var _bite_cavity_mat: StandardMaterial3D = null
 var _spider_rng := RandomNumberGenerator.new()
+var _fruit_rng := RandomNumberGenerator.new()
+var _mushroom_rng := RandomNumberGenerator.new()
+var _spike_rng := RandomNumberGenerator.new()
+var _mushroom_scene_cache: Dictionary = {}
+var _mushroom_variant_paths: Array[String] = []
+var _background_variant_paths: Array[String] = []
+var _background_texture_cache: Dictionary = {}
+var _spider_move_timer := 0.0
+var _game_over_pending := false
+var _all_cells: Array[Vector2i] = []
+var _fog_state: Dictionary = {}        # cell -> FOG_* enum
+var _fog_image: Image = null
+var _fog_texture: ImageTexture = null
+var _hazard_nodes: Dictionary = {}     # cell -> Node3D
+var _bonus_nodes: Dictionary = {}      # cell -> Node3D
+var _bonus_types: Dictionary = {}      # cell -> String
+var _base_reveal_radius := 5.0
+var _glow_leaf_bonus := 0.0
+var _lantern_timer := 0.0
+var _last_effective_reveal_radius := -1.0
+var _leaf_combo_count := 0
+var _leaf_combo_timer := 0.0
+var _combo_reveal_timer := 0.0
+var _combo_speed_timer := 0.0
+var _tension_tick_timer := 0.0
+var _shoe_speed_active := false
+var _dizzy_timer := 0.0
+var _wormholes: Dictionary = {}         # cell -> linked cell
+var _wormhole_nodes: Dictionary = {}    # cell -> Node3D
+var _wormhole_cooldown := 0.0
+var _required_fruit_counts: Dictionary = {}
+var _required_fruits_left := 0
+var _uses_specific_fruit_objective := false
 
 # ── Sounds ──
 var _snd_move: AudioStreamPlayer
@@ -206,6 +400,7 @@ var _snd_eat: AudioStreamPlayer
 var _snd_leaf: AudioStreamPlayer
 var _snd_portal: AudioStreamPlayer
 var _snd_spider: AudioStreamPlayer
+var _snd_ouch: AudioStreamPlayer
 
 @onready var cam: Camera3D = $Camera3D
 @onready var maze_layer: Node3D = $MazeLayer
@@ -247,6 +442,738 @@ func _clamp_cam_look_target(target: Vector3) -> Vector3:
 	target.z = clampf(target.z, pinned_min_z, max_z)
 	return target
 
+func _level_reveal_radius(level_idx: int) -> float:
+	if level_idx >= 0 and level_idx < REVEAL_RADIUS_BY_LEVEL.size():
+		return REVEAL_RADIUS_BY_LEVEL[level_idx]
+	return REVEAL_RADIUS_BY_LEVEL[-1]
+
+func _effective_reveal_radius() -> float:
+	var bonus := _glow_leaf_bonus
+	if _lantern_timer > 0.0:
+		bonus += LANTERN_BONUS_RADIUS
+	if _combo_reveal_timer > 0.0:
+		bonus += LEAF_COMBO_REVEAL_BONUS
+	return _base_reveal_radius + bonus
+
+func _fog_overlay_alpha(state: int) -> float:
+	if state == FOG_VISIBLE:
+		return 0.0
+	if state == FOG_DISCOVERED:
+		return 0.40
+	return 0.97
+
+func _fog_wall_brightness(state: int) -> float:
+	if state == FOG_VISIBLE:
+		return 1.0
+	if state == FOG_DISCOVERED:
+		return 0.50
+	return 0.05
+
+func _build_fog_overlay() -> void:
+	var tex_w: int = int(max(2, _maze_w * FOG_TEX_SCALE))
+	var tex_h: int = int(max(2, _maze_h * FOG_TEX_SCALE))
+	_fog_image = Image.create(tex_w, tex_h, false, Image.FORMAT_RGBA8)
+	_fog_image.fill(Color(1.0, 1.0, 1.0, 1.0))
+	_fog_texture = ImageTexture.create_from_image(_fog_image)
+
+	var fog_mesh := PlaneMesh.new()
+	fog_mesh.size = Vector2(float(_maze_w) * CELL, float(_maze_h) * CELL)
+
+	var fog_inst := MeshInstance3D.new()
+	fog_inst.mesh = fog_mesh
+	fog_inst.position = Vector3(
+		(float(_maze_w) - 1.0) * CELL * 0.5,
+		0.03,
+		(float(_maze_h) - 1.0) * CELL * 0.5
+	)
+	var fog_shader := Shader.new()
+	fog_shader.code = """
+shader_type spatial;
+render_mode unshaded, cull_disabled, blend_mix, depth_draw_opaque, shadows_disabled;
+
+uniform sampler2D fog_tex : source_color;
+
+void fragment() {
+	float fog = texture(fog_tex, UV).r;
+	fog = smoothstep(0.02, 0.98, fog);
+	ALBEDO = vec3(0.0);
+	ALPHA = fog;
+}
+"""
+	var fog_mat := ShaderMaterial.new()
+	fog_mat.shader = fog_shader
+	fog_mat.set_shader_parameter("fog_tex", _fog_texture)
+	fog_inst.material_override = fog_mat
+	fog_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	maze_layer.add_child(fog_inst)
+	_fog_mm_inst = fog_inst
+
+func _get_fog_alpha_for_cell_index(cx: int, cy: int) -> float:
+	if cx < 0 or cy < 0 or cx >= _maze_w or cy >= _maze_h:
+		return 1.0
+	var cell := Vector2i(cx, cy)
+	return _fog_overlay_alpha(int(_fog_state.get(cell, FOG_HIDDEN)))
+
+func _set_wall_fog_cell(cell: Vector2i, state: int) -> void:
+	var b := _fog_wall_brightness(state)
+	var c := Color(b, b, b, 1.0)
+	if _wall_mm_inst and _wall_mm_inst.multimesh and _cell_wall_index.has(cell):
+		var wall_idx := int(_cell_wall_index[cell])
+		_wall_mm_inst.multimesh.set_instance_color(wall_idx, c)
+	if _rock_mm_inst and _rock_mm_inst.multimesh and _rock_cell_wall_index.has(cell):
+		var rock_idx := int(_rock_cell_wall_index[cell])
+		_rock_mm_inst.multimesh.set_instance_color(rock_idx, c)
+	if _lump_mm_inst and _lump_mm_inst.multimesh and _cell_lump_range.has(cell):
+		var r := _cell_lump_range[cell] as Vector2i
+		for i in range(r.x, r.y):
+			_lump_mm_inst.multimesh.set_instance_color(i, c)
+
+func _refresh_fog_visibility(center_cell: Vector2i) -> void:
+	for cell in _all_cells:
+		if int(_fog_state.get(cell, FOG_HIDDEN)) == FOG_VISIBLE:
+			_fog_state[cell] = FOG_DISCOVERED
+
+	var radius := _effective_reveal_radius()
+	var r2 := radius * radius
+	for cell in _all_cells:
+		var dx := float(cell.x - center_cell.x)
+		var dz := float(cell.y - center_cell.y)
+		if dx * dx + dz * dz <= r2:
+			_fog_state[cell] = FOG_VISIBLE
+		elif not _fog_state.has(cell):
+			_fog_state[cell] = FOG_HIDDEN
+
+	_last_effective_reveal_radius = radius
+	_apply_fog_visuals()
+
+func _apply_fog_visuals() -> void:
+	if _fog_image and _fog_texture:
+		for cell in _all_cells:
+			var alpha := _fog_overlay_alpha(int(_fog_state.get(cell, FOG_HIDDEN)))
+			var px := clampi(cell.x, 0, _fog_image.get_width() - 1)
+			var py := clampi(cell.y, 0, _fog_image.get_height() - 1)
+			_fog_image.set_pixel(px, py, Color(alpha, alpha, alpha, 1.0))
+		_fog_texture.update(_fog_image)
+
+	for cell in _wall_cells:
+		_set_wall_fog_cell(cell, int(_fog_state.get(cell, FOG_HIDDEN)))
+
+	for cell in _bitten_bush_nodes.keys():
+		var bush := _bitten_bush_nodes[cell] as Node3D
+		if bush:
+			bush.visible = int(_fog_state.get(cell, FOG_HIDDEN)) != FOG_HIDDEN
+
+	for cell in leaves.keys():
+		var leaf := leaves[cell] as Node3D
+		if leaf:
+			leaf.visible = int(_fog_state.get(cell, FOG_HIDDEN)) != FOG_HIDDEN
+
+	for cell in _bonus_nodes.keys():
+		var bonus := _bonus_nodes[cell] as Node3D
+		if bonus:
+			bonus.visible = int(_fog_state.get(cell, FOG_HIDDEN)) != FOG_HIDDEN
+
+	for cell in _wormhole_nodes.keys():
+		var wormhole := _wormhole_nodes[cell] as Node3D
+		if wormhole:
+			wormhole.visible = int(_fog_state.get(cell, FOG_HIDDEN)) != FOG_HIDDEN
+
+	for cell in _hazard_nodes.keys():
+		var hazard := _hazard_nodes[cell] as Node3D
+		if hazard:
+			hazard.visible = int(_fog_state.get(cell, FOG_HIDDEN)) == FOG_VISIBLE
+
+	if exit_node:
+		exit_node.visible = int(_fog_state.get(exit_cell, FOG_HIDDEN)) != FOG_HIDDEN
+
+func _spawn_bonus_item(cell: Vector2i, bonus_type: String) -> void:
+	var root := Node3D.new()
+	root.position = _pos(cell) + Vector3(0.0, 0.34, 0.0)
+	root.set_meta("bonus_type", bonus_type)
+
+	if bonus_type == "shoe":
+		var shoe := MeshInstance3D.new()
+		var shoe_mesh := BoxMesh.new()
+		shoe_mesh.size = Vector3(0.34, 0.12, 0.54)
+		shoe.mesh = shoe_mesh
+		var shoe_mat := StandardMaterial3D.new()
+		shoe_mat.albedo_color = Color(0.18, 0.32, 0.92)
+		shoe_mat.roughness = 0.4
+		shoe_mat.emission_enabled = true
+		shoe_mat.emission = Color(0.08, 0.14, 0.45)
+		shoe_mat.emission_energy_multiplier = 1.2
+		shoe.material_override = shoe_mat
+		shoe.position.y = 0.04
+		shoe.rotation_degrees = Vector3(0.0, 18.0, 0.0)
+		shoe.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(shoe)
+
+		var sole := MeshInstance3D.new()
+		var sole_mesh := BoxMesh.new()
+		sole_mesh.size = Vector3(0.36, 0.04, 0.56)
+		sole.mesh = sole_mesh
+		var sole_mat := StandardMaterial3D.new()
+		sole_mat.albedo_color = Color(0.92, 0.92, 0.96)
+		sole.material_override = sole_mat
+		sole.position.y = -0.02
+		sole.rotation_degrees = shoe.rotation_degrees
+		sole.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(sole)
+
+		objects_layer.add_child(root)
+		_bonus_nodes[cell] = root
+		_bonus_types[cell] = bonus_type
+		return
+
+	if not _spawn_bonus_fruit_visual(root):
+		root.queue_free()
+		return
+
+	objects_layer.add_child(root)
+	_bonus_nodes[cell] = root
+	_bonus_types[cell] = bonus_type
+
+func _spawn_bonus_fruit_visual(root: Node3D) -> bool:
+	if root == null:
+		return false
+	var start_variant := _fruit_rng.randi_range(0, FRUIT_VARIANT_COUNT - 1)
+	for i in range(FRUIT_VARIANT_COUNT):
+		var variant := (start_variant + i) % FRUIT_VARIANT_COUNT
+		var path := "%s/fruit_%02d.glb" % [FRUIT_VARIANT_DIR, variant + 1]
+		var packed := load(path) as PackedScene
+		if packed == null:
+			continue
+		var inst := packed.instantiate() as Node3D
+		if inst == null:
+			continue
+		var mesh_inst := _find_first_mesh_instance(inst)
+		if mesh_inst == null or mesh_inst.mesh == null:
+			inst.queue_free()
+			continue
+		var aabb := mesh_inst.mesh.get_aabb()
+		var size := aabb.size
+		if size.x <= 0.0001 or size.y <= 0.0001 or size.z <= 0.0001:
+			inst.queue_free()
+			continue
+		var target_w := 0.48
+		var target_h := 0.52
+		var sx := target_w / maxf(size.x, 0.0001)
+		var sy := target_h / maxf(size.y, 0.0001)
+		var sz := target_w / maxf(size.z, 0.0001)
+		var s := minf(sx, minf(sy, sz))
+		inst.scale = Vector3(s, s, s)
+		var center := aabb.position + size * 0.5
+		inst.position = Vector3(-center.x * s, -aabb.position.y * s, -center.z * s)
+		_set_shadow_mode_recursive(inst, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+		root.add_child(inst)
+		return true
+	return false
+
+func _place_optional_bonus_items(rows: Array, walkable_cells: Array[Vector2i]) -> void:
+	for y in rows.size():
+		var row: String = rows[y]
+		for x in row.length():
+			var ch := row[x]
+			var cell := Vector2i(x, y)
+			if ch == "N":
+				_spawn_bonus_item(cell, "lantern")
+			elif ch == "G":
+				_spawn_bonus_item(cell, "glow_leaf")
+			elif ch == "M":
+				_spawn_bonus_item(cell, "map_flower")
+
+	if walkable_cells.is_empty():
+		return
+	var pool: Array[Vector2i] = []
+	for cell in walkable_cells:
+		if cell == player_cell or cell == exit_cell:
+			continue
+		if _is_near_player_start(cell):
+			continue
+		if _is_near_exit(cell, EXIT_SAFE_SPAWN_RADIUS):
+			continue
+		if leaves.has(cell) or hazards.has(cell) or _bonus_types.has(cell):
+			continue
+		pool.append(cell)
+	if pool.is_empty():
+		return
+	pool.shuffle()
+	if pool.size() > 0 and randf() < 0.25:
+		_spawn_bonus_item(pool.pop_back(), "lantern")
+	if pool.size() > 0 and randf() < 0.20:
+		_spawn_bonus_item(pool.pop_back(), "glow_leaf")
+	if pool.size() > 0 and randf() < 0.20:
+		_spawn_bonus_item(pool.pop_back(), "map_flower")
+
+func _make_wormhole(cell: Vector2i, pair_idx: int) -> void:
+	var root := Node3D.new()
+	root.position = _pos(cell) + Vector3(0.0, 0.01, 0.0)
+	root.set_meta("pair_idx", pair_idx)
+
+	var core := MeshInstance3D.new()
+	var core_mesh := CylinderMesh.new()
+	core_mesh.top_radius = 0.20
+	core_mesh.bottom_radius = 0.20
+	core_mesh.height = 0.03
+	core.mesh = core_mesh
+	var core_mat := StandardMaterial3D.new()
+	core_mat.albedo_color = Color(0.03, 0.03, 0.05)
+	core_mat.roughness = 1.0
+	core.material_override = core_mat
+	core.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(core)
+
+	var ring := MeshInstance3D.new()
+	var ring_mesh := TorusMesh.new()
+	ring_mesh.inner_radius = 0.04
+	ring_mesh.outer_radius = 0.24
+	ring.mesh = ring_mesh
+	ring.rotation_degrees = Vector3(90.0, 0.0, 0.0)
+	ring.position.y = 0.02
+	var hue := 0.56 if pair_idx % 2 == 0 else 0.08
+	var ring_mat := StandardMaterial3D.new()
+	ring_mat.albedo_color = Color.from_hsv(hue, 0.75, 1.0)
+	ring_mat.emission_enabled = true
+	ring_mat.emission = Color.from_hsv(hue, 0.70, 1.0)
+	ring_mat.emission_energy_multiplier = 0.65
+	ring.material_override = ring_mat
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(ring)
+
+	objects_layer.add_child(root)
+	_wormhole_nodes[cell] = root
+
+func _spawn_wormhole_pairs(walkable_cells: Array[Vector2i]) -> void:
+	if walkable_cells.is_empty():
+		return
+
+	var candidates: Array[Vector2i] = []
+	for cell in walkable_cells:
+		if cell == player_cell or cell == exit_cell:
+			continue
+		if _is_near_player_start(cell, 4):
+			continue
+		if _is_near_exit(cell, EXIT_SAFE_SPAWN_RADIUS + 1):
+			continue
+		if leaves.has(cell) or hazards.has(cell) or _bonus_types.has(cell):
+			continue
+		candidates.append(cell)
+
+	if candidates.size() < 2:
+		return
+
+	candidates.shuffle()
+	var pair_idx := 0
+	while pair_idx < WORMHOLE_PAIR_COUNT and candidates.size() >= 2:
+		var a: Vector2i = candidates.pop_back()
+		var best_idx := -1
+		for i in range(candidates.size()):
+			var candidate_b: Vector2i = candidates[i]
+			var manhattan: int = abs(a.x - candidate_b.x) + abs(a.y - candidate_b.y)
+			if manhattan >= WORMHOLE_MIN_PAIR_DISTANCE:
+				best_idx = i
+				break
+		if best_idx == -1:
+			continue
+
+		var b: Vector2i = candidates[best_idx]
+		candidates.remove_at(best_idx)
+		_wormholes[a] = b
+		_wormholes[b] = a
+		_make_wormhole(a, pair_idx)
+		_make_wormhole(b, pair_idx)
+		pair_idx += 1
+
+func _place_random_spikes(walkable_cells: Array[Vector2i]) -> void:
+	if walkable_cells.is_empty():
+		return
+	var pool: Array[Vector2i] = []
+	for cell in walkable_cells:
+		if cell == player_cell or cell == exit_cell:
+			continue
+		if _is_near_player_start(cell):
+			continue
+		if _is_near_exit(cell, EXIT_SAFE_SPAWN_RADIUS):
+			continue
+		if leaves.has(cell) or hazards.has(cell):
+			continue
+		# Avoid narrow corridors so spikes are naturally avoidable.
+		if _non_wall_neighbors(cell).size() < 3:
+			continue
+		pool.append(cell)
+	if pool.is_empty():
+		return
+	pool.shuffle()
+	var spike_by_level := [2, 3, 5, 6, 7, 8, 9, 10]
+	var spike_count: int = int(spike_by_level[min(current_level, spike_by_level.size() - 1)])
+	for i in range(min(spike_count, pool.size())):
+		_make_spike(pool[i])
+
+func _is_inside_maze(cell: Vector2i) -> bool:
+	return cell.x >= 0 and cell.x < _maze_w and cell.y >= 0 and cell.y < _maze_h
+
+func _is_near_player_start(cell: Vector2i, radius: int = PLAYER_SAFE_SPAWN_RADIUS) -> bool:
+	if radius <= 0:
+		return cell == player_cell
+	return abs(cell.x - player_cell.x) <= radius and abs(cell.y - player_cell.y) <= radius
+
+func _is_near_exit(cell: Vector2i, radius: int) -> bool:
+	if radius <= 0:
+		return cell == exit_cell
+	return abs(cell.x - exit_cell.x) <= radius and abs(cell.y - exit_cell.y) <= radius
+
+func _force_cell_walkable(cell: Vector2i) -> void:
+	if not _is_inside_maze(cell):
+		return
+	if wall_set.has(cell):
+		wall_set.erase(cell)
+		_wall_cells.erase(cell)
+	if leaves.has(cell):
+		var leaf := leaves[cell] as Node3D
+		if leaf:
+			leaf.queue_free()
+		leaves.erase(cell)
+		leaves_left = max(leaves_left - 1, 0)
+	if _bonus_types.has(cell):
+		var bonus := _bonus_nodes.get(cell) as Node3D
+		if bonus:
+			bonus.queue_free()
+		_bonus_nodes.erase(cell)
+		_bonus_types.erase(cell)
+	if hazards.has(cell):
+		var hazard := _hazard_nodes.get(cell) as Node3D
+		if hazard:
+			hazard.queue_free()
+		hazards.erase(cell)
+		_hazard_nodes.erase(cell)
+
+func _clear_exit_area(center: Vector2i, radius: int) -> void:
+	# Carve a wider pocket left/below the portal while preserving outer border walls as a fence.
+	var left_reach := radius + 2
+	var down_reach := radius + 2
+	for dy in range(0, down_reach + 1):
+		for dx in range(-left_reach, 1):
+			var cell := center + Vector2i(dx, dy)
+			if cell.x <= 0 or cell.x >= _maze_w - 1:
+				continue
+			if cell.y <= 0 or cell.y >= _maze_h - 1:
+				continue
+			_force_cell_walkable(cell)
+
+	# Keep two-lane approach from the left so passing near the portal is less cramped.
+	for step in range(1, left_reach + 1):
+		_force_cell_walkable(center + Vector2i(-step, 0))
+		if step < left_reach:
+			_force_cell_walkable(center + Vector2i(-step, 1))
+
+func _place_exit_top_right() -> void:
+	if _maze_w <= 0 or _maze_h <= 0:
+		return
+	if exit_node and is_instance_valid(exit_node):
+		exit_node.queue_free()
+		exit_node = null
+
+	var top_right := Vector2i(max(_maze_w - 2, 1), 1)
+	if top_right == player_cell:
+		top_right = Vector2i(max(_maze_w - 3, 1), 1)
+	if not _is_inside_maze(top_right):
+		top_right = Vector2i(max(_maze_w - 2, 0), 0)
+
+	_clear_exit_area(top_right, EXIT_CLEAR_RADIUS)
+	exit_cell = top_right
+	_make_exit(exit_cell)
+
+func _target_double_wide_count() -> int:
+	var by_level := [2, 3, 4, 4, 5, 5, 6, 6]
+	return int(by_level[min(current_level, by_level.size() - 1)])
+
+func _add_double_wide_roads(walkable_cells: Array[Vector2i]) -> void:
+	if walkable_cells.is_empty():
+		return
+
+	var candidates: Array[Dictionary] = []
+	for cell in walkable_cells:
+		if _is_near_player_start(cell, 4):
+			continue
+		if _is_near_exit(cell, EXIT_SAFE_SPAWN_RADIUS + 1):
+			continue
+
+		var up := not wall_set.has(cell + Vector2i.UP)
+		var down := not wall_set.has(cell + Vector2i.DOWN)
+		var left := not wall_set.has(cell + Vector2i.LEFT)
+		var right := not wall_set.has(cell + Vector2i.RIGHT)
+
+		# Straight corridors are safest to widen while preserving route readability.
+		if up and down and not left and not right:
+			for side: Vector2i in [Vector2i.LEFT, Vector2i.RIGHT]:
+				var side_cell := cell + side
+				if not _is_inside_maze(side_cell):
+					continue
+				if side_cell.x <= 0 or side_cell.x >= _maze_w - 1:
+					continue
+				if side_cell.y <= 0 or side_cell.y >= _maze_h - 1:
+					continue
+				if not wall_set.has(side_cell):
+					continue
+				candidates.append({"base": cell, "wide": side_cell})
+		elif left and right and not up and not down:
+			for side: Vector2i in [Vector2i.UP, Vector2i.DOWN]:
+				var side_cell := cell + side
+				if not _is_inside_maze(side_cell):
+					continue
+				if side_cell.x <= 0 or side_cell.x >= _maze_w - 1:
+					continue
+				if side_cell.y <= 0 or side_cell.y >= _maze_h - 1:
+					continue
+				if not wall_set.has(side_cell):
+					continue
+				candidates.append({"base": cell, "wide": side_cell})
+
+	if candidates.is_empty():
+		return
+
+	candidates.shuffle()
+	var used: Dictionary = {}
+	var carved := 0
+	var target_count := _target_double_wide_count()
+	for item in candidates:
+		if carved >= target_count:
+			break
+		var base_cell := item["base"] as Vector2i
+		var wide_cell := item["wide"] as Vector2i
+		if used.has(wide_cell):
+			continue
+		if not wall_set.has(wide_cell):
+			continue
+
+		_force_cell_walkable(wide_cell)
+		if not walkable_cells.has(wide_cell):
+			walkable_cells.append(wide_cell)
+
+		# Put spikes on one side lane only, so players can pass on the original lane.
+		if randf() < DOUBLE_WIDE_SIDE_SPIKE_CHANCE:
+			if not _is_near_player_start(wide_cell, 5) and not _is_near_exit(wide_cell, EXIT_SAFE_SPAWN_RADIUS + 1):
+				if not leaves.has(wide_cell) and not hazards.has(wide_cell):
+					_make_spike(wide_cell)
+
+		used[wide_cell] = true
+		used[base_cell] = true
+		carved += 1
+
+func _non_wall_neighbors(cell: Vector2i) -> Array[Vector2i]:
+	var neighbors: Array[Vector2i] = []
+	for dir: Vector2i in [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]:
+		var next := cell + dir
+		if not _is_inside_maze(next):
+			continue
+		if wall_set.has(next):
+			continue
+		neighbors.append(next)
+	return neighbors
+
+func _required_progress_cells() -> Array[Vector2i]:
+	var targets: Array[Vector2i] = []
+	for leaf_cell in leaves.keys():
+		targets.append(leaf_cell)
+	if exit_node:
+		targets.append(exit_cell)
+	return targets
+
+func _reachable_cells_avoiding_spikes() -> Dictionary:
+	var visited: Dictionary = {}
+	if wall_set.has(player_cell):
+		return visited
+	if String(hazards.get(player_cell, "")) == "spike":
+		return visited
+
+	var queue: Array[Vector2i] = [player_cell]
+	visited[player_cell] = true
+	var head := 0
+	while head < queue.size():
+		var cur := queue[head]
+		head += 1
+		for next in _non_wall_neighbors(cur):
+			if visited.has(next):
+				continue
+			if String(hazards.get(next, "")) == "spike":
+				continue
+			visited[next] = true
+			queue.append(next)
+	return visited
+
+func _spike_layout_has_workaround() -> bool:
+	var reachable := _reachable_cells_avoiding_spikes()
+	for target in _required_progress_cells():
+		if not reachable.has(target):
+			return false
+	return true
+
+func _remove_spike(cell: Vector2i) -> void:
+	if String(hazards.get(cell, "")) != "spike":
+		return
+	hazards.erase(cell)
+	var node := _hazard_nodes.get(cell) as Node3D
+	if node:
+		node.queue_free()
+	_hazard_nodes.erase(cell)
+
+func _remove_mushroom(cell: Vector2i) -> void:
+	if String(hazards.get(cell, "")) != "mushroom":
+		return
+	hazards.erase(cell)
+	var node := _hazard_nodes.get(cell) as Node3D
+	if node:
+		node.queue_free()
+	_hazard_nodes.erase(cell)
+
+func _ensure_spike_workarounds() -> void:
+	var spike_cells: Array[Vector2i] = []
+	for cell in hazards.keys():
+		if String(hazards[cell]) == "spike":
+			spike_cells.append(cell)
+	if spike_cells.is_empty():
+		return
+
+	# Remove the most restrictive spikes first until objectives are reachable without stepping on spikes.
+	spike_cells.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		return _non_wall_neighbors(a).size() < _non_wall_neighbors(b).size()
+	)
+	for cell in spike_cells:
+		if _spike_layout_has_workaround():
+			break
+		_remove_spike(cell)
+
+func _collect_bonus(cell: Vector2i) -> void:
+	if not _bonus_types.has(cell):
+		return
+	var btype := String(_bonus_types[cell])
+	var node := _bonus_nodes.get(cell) as Node3D
+	if node:
+		node.queue_free()
+	_bonus_nodes.erase(cell)
+	_bonus_types.erase(cell)
+
+	if btype == "lantern":
+		_lantern_timer = LANTERN_BONUS_SECONDS
+	elif btype == "glow_leaf":
+		_glow_leaf_bonus += GLOW_LEAF_RADIUS_BONUS
+	elif btype == "map_flower":
+		for reveal_cell in _all_cells:
+			var dx := float(reveal_cell.x - cell.x)
+			var dz := float(reveal_cell.y - cell.y)
+			if dx * dx + dz * dz <= MAP_FLOWER_REVEAL_RADIUS * MAP_FLOWER_REVEAL_RADIUS:
+				if int(_fog_state.get(reveal_cell, FOG_HIDDEN)) == FOG_HIDDEN:
+					_fog_state[reveal_cell] = FOG_DISCOVERED
+	elif btype == "shoe":
+		_shoe_speed_active = true
+
+	_refresh_fog_visibility(player_cell)
+	_update_hud()
+
+func _effective_move_speed_mult() -> float:
+	var mult := 1.0
+	if _combo_speed_timer > 0.0:
+		mult *= LEAF_COMBO_SPEED_MULT
+	if _shoe_speed_active:
+		mult *= SHOE_SPEED_MULT
+	if _dizzy_timer > 0.0:
+		mult *= DIZZY_SPEED_MULT
+	return mult
+
+func _fruit_name_to_variant(fruit_name: String) -> int:
+	var key := fruit_name.strip_edges().to_lower()
+	match key:
+		"apple":
+			return 0
+		"cherry":
+			return 1
+		"peach":
+			return 2
+		"pear":
+			return 3
+		"grape":
+			return 4
+	return -1
+
+func _fruit_variant_display_name(variant: int) -> String:
+	if variant >= 0 and variant < FRUIT_VARIANT_NAMES.size():
+		return String(FRUIT_VARIANT_NAMES[variant])
+	return "Fruit"
+
+func _objective_complete() -> bool:
+	return _required_fruits_left <= 0
+
+func _register_collected_fruit(variant: int) -> void:
+	if _uses_specific_fruit_objective:
+		var remaining := int(_required_fruit_counts.get(variant, 0))
+		if remaining > 0:
+			_required_fruit_counts[variant] = remaining - 1
+			_required_fruits_left = max(_required_fruits_left - 1, 0)
+	else:
+		_required_fruits_left = max(_required_fruits_left - 1, 0)
+
+func _objective_status_text() -> String:
+	if not _uses_specific_fruit_objective:
+		return "Objective: collect any fruits (%d left)" % _required_fruits_left
+
+	var parts := PackedStringArray()
+	for variant in range(FRUIT_VARIANT_NAMES.size()):
+		var left := int(_required_fruit_counts.get(variant, 0))
+		if left > 0:
+			parts.append("%s x%d" % [_fruit_variant_display_name(variant), left])
+	if parts.is_empty():
+		return "Objective: done"
+	return "Objective: " + ", ".join(parts)
+
+func _configure_fruit_objective_for_level() -> void:
+	_required_fruit_counts.clear()
+	_required_fruits_left = leaves_left
+	_uses_specific_fruit_objective = false
+
+	var objective: Dictionary = LEVEL_FRUIT_OBJECTIVES.get(current_level, {}) as Dictionary
+	if objective.is_empty():
+		return
+
+	var required_variants: Array[int] = []
+	for fruit_name in objective.keys():
+		var variant := _fruit_name_to_variant(String(fruit_name))
+		if variant < 0:
+			continue
+		var count: int = maxi(0, int(objective[fruit_name]))
+		for _i in range(count):
+			required_variants.append(variant)
+
+	if required_variants.is_empty() or leaves.is_empty():
+		return
+
+	var leaf_cells: Array[Vector2i] = []
+	for cell in leaves.keys():
+		leaf_cells.append(cell)
+
+	var assign_rng := RandomNumberGenerator.new()
+	assign_rng.seed = 8803 + current_level * 97
+	for i in range(leaf_cells.size() - 1, 0, -1):
+		var j := assign_rng.randi_range(0, i)
+		var tmp := leaf_cells[i]
+		leaf_cells[i] = leaf_cells[j]
+		leaf_cells[j] = tmp
+
+	var assigned := 0
+	for i in range(min(required_variants.size(), leaf_cells.size())):
+		var cell := leaf_cells[i]
+		var variant := required_variants[i]
+		var leaf_node := leaves.get(cell) as Node3D
+		if leaf_node:
+			leaf_node.set_meta("fruit_variant", variant)
+			if leaf_node.has_method("set_fruit_variant"):
+				leaf_node.call("set_fruit_variant", variant)
+			_required_fruit_counts[variant] = int(_required_fruit_counts.get(variant, 0)) + 1
+			assigned += 1
+
+	if assigned > 0:
+		_uses_specific_fruit_objective = true
+		_required_fruits_left = assigned
+
 func _init_sounds() -> void:
 	var sound_map := {
 		"move": "res://assets/sounds/caterpillar_goofy_footsteps.wav",
@@ -255,6 +1182,7 @@ func _init_sounds() -> void:
 		"leaf": "res://assets/sounds/leaf_pickup.wav",
 		"portal": "res://assets/sounds/portal_enter.wav",
 		"spider": "res://assets/sounds/spider_alert.wav",
+		"ouch": "res://assets/sounds/ouch.wav",
 	}
 	for key in sound_map:
 		var player := AudioStreamPlayer.new()
@@ -271,6 +1199,7 @@ func _init_sounds() -> void:
 	_snd_leaf.volume_db = 1.0
 	_snd_portal.volume_db = 1.0
 	_snd_spider.volume_db = 3.0
+	_snd_ouch.volume_db = 2.0
 	if _snd_move and not _snd_move.finished.is_connected(_on_move_sound_finished):
 		_snd_move.finished.connect(_on_move_sound_finished)
 
@@ -298,6 +1227,9 @@ uniform vec3 color_bot : source_color = vec3(0.18, 0.45, 0.10);
 uniform sampler2D leaf_tex : hint_default_white, filter_linear_mipmap, repeat_enable;
 uniform float tex_scale : hint_range(0.1, 8.0) = 2.0;
 uniform float tex_influence : hint_range(0.0, 1.0) = 0.6;
+uniform float corner_roundness : hint_range(0.0, 0.25) = 0.10;
+uniform float top_lump_strength : hint_range(0.0, 1.0) = 1.0;
+uniform float normal_perturb_strength : hint_range(0.0, 0.3) = 0.15;
 
 varying vec3 v_world_pos;
 varying vec3 v_world_normal;
@@ -314,7 +1246,7 @@ void vertex() {
     // Rounded-box SDF rounding for edges
     float half_w = 0.5;
     float half_h = 0.425;
-    float r = 0.12;
+	float r = corner_roundness;
 
     vec3 local = VERTEX;
     vec3 s = sign(local);
@@ -335,7 +1267,7 @@ void vertex() {
     vec3 bump_dir = normalize(local);
     bump_dir.y = max(bump_dir.y, 0.3);
     bump_dir = normalize(bump_dir);
-    local += bump_dir * (lump1 + lump2 + lump3) * top_mask;
+	local += bump_dir * (lump1 + lump2 + lump3) * top_mask * top_lump_strength;
 
     VERTEX = local;
     v_height = local.y;
@@ -367,13 +1299,13 @@ void fragment() {
     float ao = smoothstep(0.0, 0.20, h);
     base *= mix(0.78, 1.0, ao);
 
-    ALBEDO = base;
+	ALBEDO = base * COLOR.rgb;
     ROUGHNESS = 0.75;
     SPECULAR = 0.2;
     // Slight normal perturbation for leafy feel
-    float nx = hash3(v_world_pos * 20.0) - 0.5;
-    float nz = hash3(v_world_pos * 20.0 + vec3(77.0)) - 0.5;
-    NORMAL_MAP = vec3(0.5 + nx * 0.15, 0.5 + nz * 0.15, 1.0);
+	float nx = hash3(v_world_pos * 20.0) - 0.5;
+	float nz = hash3(v_world_pos * 20.0 + vec3(77.0)) - 0.5;
+	NORMAL_MAP = vec3(0.5 + nx * normal_perturb_strength, 0.5 + nz * normal_perturb_strength, 1.0);
 }
 "
 	_wall_mat = ShaderMaterial.new()
@@ -386,19 +1318,70 @@ void fragment() {
 	_wall_mat.set_shader_parameter("tex_scale", 0.4)
 	_wall_mat.set_shader_parameter("tex_influence", 0.6)
 
+	_rock_mat = ShaderMaterial.new()
+	_rock_mat.shader = hedge_shader
+	_rock_mat.set_shader_parameter("color_top", Vector3(0.56, 0.56, 0.58))
+	_rock_mat.set_shader_parameter("color_bot", Vector3(0.30, 0.31, 0.33))
+	_rock_mat.set_shader_parameter("tex_scale", 0.32)
+	_rock_mat.set_shader_parameter("tex_influence", 0.0)
+	_rock_mat.set_shader_parameter("corner_roundness", 0.08)
+	_rock_mat.set_shader_parameter("top_lump_strength", 0.0)
+	_rock_mat.set_shader_parameter("normal_perturb_strength", 0.0)
+
 	_wall_mesh = BoxMesh.new()
 	_wall_mesh.size = Vector3(CELL, WALL_HEIGHT, CELL)
-	_wall_mesh.subdivide_width = 8
-	_wall_mesh.subdivide_height = 8
-	_wall_mesh.subdivide_depth = 8
+	_wall_mesh.subdivide_width = 2
+	_wall_mesh.subdivide_height = 2
+	_wall_mesh.subdivide_depth = 2
 
 	_ground_mat = StandardMaterial3D.new()
 	_ground_mat.albedo_color = Color(0.93, 0.85, 0.65)
 	_ground_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	var ground_tex := load("res://assets/background_sand.png") as Texture2D
-	if ground_tex:
-		_ground_mat.albedo_texture = ground_tex
-		_ground_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	_apply_level_ground_texture(0)
+
+func _get_background_variant_paths() -> Array[String]:
+	if not _background_variant_paths.is_empty():
+		return _background_variant_paths
+
+	var dir := DirAccess.open(LEVEL_BACKGROUND_DIR)
+	if dir == null:
+		return _background_variant_paths
+
+	dir.list_dir_begin()
+	while true:
+		var file_name := dir.get_next()
+		if file_name == "":
+			break
+		if dir.current_is_dir():
+			continue
+		var name_lower := file_name.to_lower()
+		if not (name_lower.ends_with(".png") or name_lower.ends_with(".jpg") or name_lower.ends_with(".jpeg") or name_lower.ends_with(".webp")):
+			continue
+		_background_variant_paths.append("%s/%s" % [LEVEL_BACKGROUND_DIR, file_name])
+	dir.list_dir_end()
+	_background_variant_paths.sort()
+	return _background_variant_paths
+
+func _load_background_texture(path: String) -> Texture2D:
+	if _background_texture_cache.has(path):
+		return _background_texture_cache[path] as Texture2D
+	var tex := load(path) as Texture2D
+	if tex:
+		_background_texture_cache[path] = tex
+	return tex
+
+func _apply_level_ground_texture(level_idx: int) -> void:
+	if _ground_mat == null:
+		return
+	var paths := _get_background_variant_paths()
+	var tex: Texture2D = null
+	if not paths.is_empty():
+		var pick := posmod(level_idx, paths.size())
+		tex = _load_background_texture(paths[pick])
+	if tex == null:
+		tex = _load_background_texture(DEFAULT_GROUND_TEXTURE)
+	_ground_mat.albedo_texture = tex
+	_ground_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 
 func _setup_lighting() -> void:
 	# Directional light – slightly angled for soft shadows and depth
@@ -450,14 +1433,44 @@ func _clear() -> void:
 	_bite_count.clear()
 	_is_biting = false
 	_wall_mm_inst = null
+	_rock_mm_inst = null
 	_lump_mm_inst = null
+	_fog_mm_inst = null
 	_bite_marks.clear()
 	_segment_targets.clear()
 	_bitten_bush_nodes.clear()
 	_bitten_bush_hscale.clear()
 	_cell_wall_index.clear()
+	_rock_cell_wall_index.clear()
 	_cell_wall_scales.clear()
 	_cell_lump_range.clear()
+	_bush_wall_cells.clear()
+	_rock_wall_cells.clear()
+	_all_cells.clear()
+	_fog_state.clear()
+	_fog_image = null
+	_fog_texture = null
+	_hazard_nodes.clear()
+	_bonus_nodes.clear()
+	_bonus_types.clear()
+	_wormholes.clear()
+	_wormhole_nodes.clear()
+	_wormhole_cooldown = 0.0
+	_glow_leaf_bonus = 0.0
+	_lantern_timer = 0.0
+	_last_effective_reveal_radius = -1.0
+	_leaf_combo_count = 0
+	_leaf_combo_timer = 0.0
+	_combo_reveal_timer = 0.0
+	_combo_speed_timer = 0.0
+	_tension_tick_timer = 0.0
+	_spider_move_timer = 0.0
+	_game_over_pending = false
+	_shoe_speed_active = false
+	_dizzy_timer = 0.0
+	_required_fruit_counts.clear()
+	_required_fruits_left = 0
+	_uses_specific_fruit_objective = false
 	_segment_target_rots.clear()
 	leaves.clear()
 	hazards.clear()
@@ -466,9 +1479,15 @@ func _clear() -> void:
 func load_level(idx: int) -> void:
 	_clear()
 	current_level = idx % LEVELS.size()
+	_apply_level_ground_texture(current_level)
 	leaves_left = 0
 	_spider_rng.randomize()
+	_fruit_rng.seed = 10007 + current_level * 977
+	_mushroom_rng.randomize()
+	_spike_rng.randomize()
+	_base_reveal_radius = _level_reveal_radius(current_level)
 	var rows: Array = LEVELS[current_level]
+	var walkable_cells: Array[Vector2i] = []
 
 	_maze_h = rows.size()
 	_maze_w = 0
@@ -480,14 +1499,20 @@ func load_level(idx: int) -> void:
 
 	# Parse maze – collect wall positions first
 	_wall_cells.clear()
+	_all_cells.clear()
+	_fog_state.clear()
 	for y in rows.size():
 		var row: String = rows[y]
 		for x in row.length():
 			var ch := row[x]
 			var cell := Vector2i(x, y)
+			_all_cells.append(cell)
+			_fog_state[cell] = FOG_HIDDEN
 			if ch == "#":
 				wall_set[cell] = true
 				_wall_cells.append(cell)
+			else:
+				walkable_cells.append(cell)
 			match ch:
 				"P":
 					player_cell = cell
@@ -496,28 +1521,34 @@ func load_level(idx: int) -> void:
 					_make_leaf(cell)
 				"S":
 					_make_spider(cell)
+				"^":
+					_make_spike(cell)
 				"E":
-					exit_cell = cell
-					_make_exit(cell)
+					pass
+
+	_place_exit_top_right()
+	_add_double_wide_roads(walkable_cells)
+
+	_assign_wall_types()
+	_configure_fruit_objective_for_level()
+
+	_place_random_spikes(walkable_cells)
+	_ensure_spike_workarounds()
+	_place_optional_bonus_items(rows, walkable_cells)
 
 	# Build all walls as a single MultiMesh
 	_build_wall_multimesh()
+	_build_fog_overlay()
 
-	# Scatter decorations outside the maze
-	_spawn_decorations()
+	# Scatter decorations; mushrooms are placed inside walkable maze cells.
+	_spawn_decorations(walkable_cells)
+	_spawn_wormhole_pairs(walkable_cells)
 
 	# Camera setup – perspective with isometric-like offset
 	cam.projection = Camera3D.PROJECTION_PERSPECTIVE
 	cam.fov = CAM_FOV
 	cam.near = 0.1
 	cam.far = 100.0
-
-	# Compute maze center for initial camera placement
-	var maze_center := Vector3(
-		(float(_maze_w) - 1.0) * CELL * 0.5,
-		0.0,
-		(float(_maze_h) - 1.0) * CELL * 0.5
-	)
 
 	var head_pos := _pos(player_cell)
 	_cam_look_target = _clamp_cam_look_target(Vector3(head_pos.x, 0.8, head_pos.z))
@@ -548,9 +1579,42 @@ func load_level(idx: int) -> void:
 	segment_cells = init_path
 	player_cell = segment_cells[0]
 	_rebuild_caterpillar()
+	_refresh_fog_visibility(player_cell)
 	_update_hud()
 	win_panel.visible = false
 	is_busy = false
+
+func _assign_wall_types() -> void:
+	_bush_wall_cells.clear()
+	_rock_wall_cells.clear()
+	if _wall_cells.is_empty():
+		return
+
+	var interior_candidates: Array[Vector2i] = []
+	for cell in _wall_cells:
+		var on_border := cell.x <= 0 or cell.y <= 0 or cell.x >= _maze_w - 1 or cell.y >= _maze_h - 1
+		if on_border:
+			_rock_wall_cells[cell] = true
+		else:
+			interior_candidates.append(cell)
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 6137 + current_level * 191
+	for cell in interior_candidates:
+		if rng.randf() < ROCK_WALL_RATIO:
+			_rock_wall_cells[cell] = true
+		else:
+			_bush_wall_cells[cell] = true
+
+	var target_min_bushes := mini(maxi(MIN_BUSH_WALLS, int(interior_candidates.size() * 0.20)), interior_candidates.size())
+	if _bush_wall_cells.size() < target_min_bushes:
+		var candidates := interior_candidates.duplicate()
+		while _bush_wall_cells.size() < target_min_bushes and not candidates.is_empty():
+			var idx := rng.randi_range(0, candidates.size() - 1)
+			var cell: Vector2i = candidates[idx]
+			candidates.remove_at(idx)
+			_rock_wall_cells.erase(cell)
+			_bush_wall_cells[cell] = true
 
 func _create_ground(w: int, h: int) -> void:
 	# Inner maze ground with sand/path texture
@@ -581,16 +1645,12 @@ func _create_ground(w: int, h: int) -> void:
 	outer_plane.subdivide_width = 0
 	outer_plane.subdivide_depth = 0
 	outer_inst.mesh = outer_plane
-	var outer_mat := StandardMaterial3D.new()
-	outer_mat.albedo_color = Color(0.85, 0.85, 0.85)
-	outer_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	var landscape_tex := load("res://assets/New/landscape-pattern.png") as Texture2D
-	if landscape_tex:
-		outer_mat.albedo_texture = landscape_tex
-		outer_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	# Tile proportionally to actual plane size so the texture isn't stretched
-	var tile_density := 0.15  # tiles per world unit
-	outer_mat.uv1_scale = Vector3(outer_w * tile_density, outer_h * tile_density, 1.0)
+	# Match outer background to the same level ground look.
+	var outer_mat := _ground_mat.duplicate() as StandardMaterial3D
+	if outer_mat == null:
+		outer_mat = _ground_mat
+	var outer_tiles := float(max(outer_w, outer_h)) / 4.05
+	outer_mat.uv1_scale = Vector3(outer_tiles, outer_tiles, 1.0)
 	outer_inst.material_override = outer_mat
 	outer_inst.position = Vector3(
 		(float(w) - 1.0) * CELL * 0.5,
@@ -649,39 +1709,108 @@ func _make_flower(pos: Vector3) -> void:
 	root.scale = Vector3(s, s, s)
 	maze_layer.add_child(root)
 
-func _make_mushroom(pos: Vector3) -> void:
+func _find_first_mesh_instance(node: Node) -> MeshInstance3D:
+	if node is MeshInstance3D:
+		return node as MeshInstance3D
+	for child in node.get_children():
+		var found := _find_first_mesh_instance(child)
+		if found:
+			return found
+	return null
+
+func _set_shadow_mode_recursive(node: Node, mode: int) -> void:
+	if node is GeometryInstance3D:
+		(node as GeometryInstance3D).cast_shadow = mode as GeometryInstance3D.ShadowCastingSetting
+	for child in node.get_children():
+		_set_shadow_mode_recursive(child, mode)
+
+func _get_mushroom_variant_paths() -> Array[String]:
+	if not _mushroom_variant_paths.is_empty():
+		return _mushroom_variant_paths
+
+	var dir := DirAccess.open(MUSHROOM_VARIANT_DIR)
+	if dir == null:
+		return _mushroom_variant_paths
+
+	dir.list_dir_begin()
+	while true:
+		var file_name := dir.get_next()
+		if file_name == "":
+			break
+		if dir.current_is_dir():
+			continue
+		if not file_name.to_lower().ends_with(".glb"):
+			continue
+		if file_name.to_lower().find("mushroom") == -1:
+			continue
+		_mushroom_variant_paths.append("%s/%s" % [MUSHROOM_VARIANT_DIR, file_name])
+	dir.list_dir_end()
+	_mushroom_variant_paths.sort()
+	return _mushroom_variant_paths
+
+func _load_mushroom_variant_scene(variant: int) -> PackedScene:
+	var paths := _get_mushroom_variant_paths()
+	if paths.is_empty():
+		return null
+	var clamped := posmod(variant, paths.size())
+	var path := paths[clamped]
+	if _mushroom_scene_cache.has(path):
+		return _mushroom_scene_cache[path] as PackedScene
+	var packed := load(path) as PackedScene
+	if packed:
+		_mushroom_scene_cache[path] = packed
+	return packed
+
+func _spawn_split_mushroom(root: Node3D) -> bool:
+	var paths := _get_mushroom_variant_paths()
+	if paths.is_empty():
+		return false
+	var variant := _mushroom_rng.randi_range(0, paths.size() - 1)
+	var packed := _load_mushroom_variant_scene(variant)
+	if packed == null:
+		return false
+
+	var inst := packed.instantiate() as Node3D
+	if inst == null:
+		return false
+
+	var mesh_inst := _find_first_mesh_instance(inst)
+	if mesh_inst == null or mesh_inst.mesh == null:
+		inst.queue_free()
+		return false
+
+	var aabb := mesh_inst.mesh.get_aabb()
+	var size := aabb.size
+	if size.x <= 0.0001 or size.y <= 0.0001 or size.z <= 0.0001:
+		inst.queue_free()
+		return false
+
+	var target_width := 0.34
+	var target_height := 0.44
+	var sx := target_width / maxf(size.x, 0.0001)
+	var sy := target_height / maxf(size.y, 0.0001)
+	var sz := target_width / maxf(size.z, 0.0001)
+	var base_scale := minf(sx, minf(sy, sz))
+	var random_scale := _mushroom_rng.randf_range(0.85, 1.35)
+	var s := base_scale * random_scale * MUSHROOM_SIZE_MULT
+	inst.scale = Vector3(s, s, s)
+
+	var center := aabb.position + size * 0.5
+	inst.position = Vector3(-center.x * s, -aabb.position.y * s, -center.z * s)
+	_set_shadow_mode_recursive(inst, GeometryInstance3D.SHADOW_CASTING_SETTING_OFF)
+	root.add_child(inst)
+	return true
+
+func _make_mushroom(cell: Vector2i) -> void:
 	var root := Node3D.new()
-	root.position = pos
-	# Stem
-	var stem_mesh := CylinderMesh.new()
-	stem_mesh.top_radius = 0.05
-	stem_mesh.bottom_radius = 0.06
-	stem_mesh.height = 0.18
-	var stem_inst := MeshInstance3D.new()
-	stem_inst.mesh = stem_mesh
-	var stem_mat := StandardMaterial3D.new()
-	stem_mat.albedo_color = Color(0.9, 0.88, 0.78)
-	stem_inst.material_override = stem_mat
-	stem_inst.position.y = 0.09
-	stem_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(stem_inst)
-	# Cap (hemisphere)
-	var cap_mesh := SphereMesh.new()
-	cap_mesh.radius = 0.12
-	cap_mesh.height = 0.14
-	var cap_inst := MeshInstance3D.new()
-	cap_inst.mesh = cap_mesh
-	var cap_mat := StandardMaterial3D.new()
-	var cap_colors := [Color(0.8, 0.15, 0.12), Color(0.85, 0.55, 0.15), Color(0.6, 0.35, 0.2)]
-	cap_mat.albedo_color = cap_colors[randi() % cap_colors.size()]
-	cap_inst.material_override = cap_mat
-	cap_inst.position.y = 0.2
-	cap_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(cap_inst)
-	root.rotation.y = randf() * TAU
-	var s := randf_range(0.6, 1.4)
-	root.scale = Vector3(s, s, s)
-	maze_layer.add_child(root)
+	root.position = _pos(cell)
+	if _spawn_split_mushroom(root):
+		root.rotation.y = _mushroom_rng.randf_range(0.0, TAU)
+		objects_layer.add_child(root)
+		hazards[cell] = "mushroom"
+		_hazard_nodes[cell] = root
+	else:
+		root.queue_free()
 
 func _make_rock(pos: Vector3) -> void:
 	var root := Node3D.new()
@@ -726,7 +1855,7 @@ func _make_grass_tuft(pos: Vector3) -> void:
 		root.add_child(blade)
 	maze_layer.add_child(root)
 
-func _spawn_decorations() -> void:
+func _spawn_decorations(walkable_cells: Array[Vector2i] = []) -> void:
 	# Place decorations in the empty strips to the left and right of the maze
 	var margin := 8.0  # how far out from maze edge to scatter
 	var maze_left := -0.5 * CELL
@@ -752,38 +1881,111 @@ func _spawn_decorations() -> void:
 			var kind := rng.randi_range(0, 3)
 			match kind:
 				0: _make_flower(pos)
-				1: _make_mushroom(pos)
+				1: _make_rock(pos)
 				2: _make_rock(pos)
 				3: _make_grass_tuft(pos)
+	# Place a smaller number of mushrooms inside the maze as hazards.
+	if walkable_cells.is_empty():
+		return
+	var mushroom_candidates: Array[Vector2i] = []
+	for cell in walkable_cells:
+		if cell == player_cell or cell == exit_cell:
+			continue
+		if _is_near_player_start(cell):
+			continue
+		if _is_near_exit(cell, EXIT_SAFE_SPAWN_RADIUS):
+			continue
+		if leaves.has(cell) or hazards.has(cell) or _bonus_types.has(cell):
+			continue
+		mushroom_candidates.append(cell)
+
+	if mushroom_candidates.is_empty():
+		return
+	mushroom_candidates.shuffle()
+	var mushroom_by_level := [2, 2, 3, 3, 4, 4, 5, 5]
+	var level_target := int(mushroom_by_level[min(current_level, mushroom_by_level.size() - 1)])
+	var density_target := int(float(mushroom_candidates.size()) * 0.025)
+	var target_count := mini(maxi(level_target, density_target), 7)
+	for i in range(mini(target_count, mushroom_candidates.size())):
+		var m_cell := mushroom_candidates[i]
+		_make_mushroom(m_cell)
 
 func _build_wall_multimesh() -> void:
-	# Bush body boxes with per-cell random height/scale variation
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = _wall_mesh
-	mm.instance_count = _wall_cells.size()
+	if _wall_mm_inst:
+		_wall_mm_inst.queue_free()
+		_wall_mm_inst = null
+	if _rock_mm_inst:
+		_rock_mm_inst.queue_free()
+		_rock_mm_inst = null
+	if _lump_mm_inst:
+		_lump_mm_inst.queue_free()
+		_lump_mm_inst = null
+
+	_cell_wall_index.clear()
+	_rock_cell_wall_index.clear()
+	_cell_wall_scales.clear()
+	_cell_lump_range.clear()
+
+	var bush_cells: Array[Vector2i] = []
+	var rock_cells: Array[Vector2i] = []
+	for cell in _wall_cells:
+		if _bush_wall_cells.has(cell):
+			bush_cells.append(cell)
+		else:
+			rock_cells.append(cell)
+
 	var body_rng := RandomNumberGenerator.new()
-	body_rng.seed = 5432
-	for i in _wall_cells.size():
-		var cell_i := _wall_cells[i]
-		var p := _pos(cell_i)
-		var h_scale := body_rng.randf_range(0.80, 1.10)
-		var w_scale := body_rng.randf_range(0.92, 1.06)
-		_cell_wall_index[cell_i] = i
-		_cell_wall_scales[cell_i] = Vector2(w_scale, h_scale)
-		var t := Transform3D.IDENTITY
-		if not _bitten_bush_nodes.has(cell_i):
+	body_rng.seed = 5432 + current_level * 17
+
+	if not bush_cells.is_empty():
+		var bush_mm := MultiMesh.new()
+		bush_mm.transform_format = MultiMesh.TRANSFORM_3D
+		bush_mm.use_colors = true
+		bush_mm.mesh = _wall_mesh
+		bush_mm.instance_count = bush_cells.size()
+		for i in bush_cells.size():
+			var cell_i := bush_cells[i]
+			var p := _pos(cell_i)
+			var h_scale := body_rng.randf_range(0.94, 1.10)
+			var w_scale := body_rng.randf_range(1.01, 1.12)
+			_cell_wall_index[cell_i] = i
+			_cell_wall_scales[cell_i] = Vector2(w_scale, h_scale)
+			var t := Transform3D.IDENTITY
+			if not _bitten_bush_nodes.has(cell_i):
+				t = t.scaled(Vector3(w_scale, h_scale, w_scale))
+				t.origin = Vector3(p.x, WALL_HEIGHT * 0.5 * h_scale, p.z)
+			else:
+				t.origin = Vector3(0.0, -9999.0, 0.0)  # hide: individual node handles this cell
+			bush_mm.set_instance_transform(i, t)
+		var bush_inst := MultiMeshInstance3D.new()
+		bush_inst.multimesh = bush_mm
+		bush_inst.material_override = _wall_mat
+		bush_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		maze_layer.add_child(bush_inst)
+		_wall_mm_inst = bush_inst
+
+	if not rock_cells.is_empty():
+		var rock_mm := MultiMesh.new()
+		rock_mm.transform_format = MultiMesh.TRANSFORM_3D
+		rock_mm.use_colors = true
+		rock_mm.mesh = _wall_mesh
+		rock_mm.instance_count = rock_cells.size()
+		for i in rock_cells.size():
+			var cell_i := rock_cells[i]
+			var p := _pos(cell_i)
+			var h_scale := body_rng.randf_range(0.98, 1.06)
+			var w_scale := body_rng.randf_range(1.02, 1.08)
+			_rock_cell_wall_index[cell_i] = i
+			var t := Transform3D.IDENTITY
 			t = t.scaled(Vector3(w_scale, h_scale, w_scale))
 			t.origin = Vector3(p.x, WALL_HEIGHT * 0.5 * h_scale, p.z)
-		else:
-			t.origin = Vector3(0.0, -9999.0, 0.0)  # hide: individual node handles this cell
-		mm.set_instance_transform(i, t)
-	var mm_inst := MultiMeshInstance3D.new()
-	mm_inst.multimesh = mm
-	mm_inst.material_override = _wall_mat
-	mm_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-	maze_layer.add_child(mm_inst)
-	_wall_mm_inst = mm_inst
+			rock_mm.set_instance_transform(i, t)
+		var rock_inst := MultiMeshInstance3D.new()
+		rock_inst.multimesh = rock_mm
+		rock_inst.material_override = _rock_mat
+		rock_inst.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+		maze_layer.add_child(rock_inst)
+		_rock_mm_inst = rock_inst
 
 	# Bush canopy lumps – bigger, more varied clusters
 	var lump_mesh := SphereMesh.new()
@@ -807,8 +2009,8 @@ func _build_wall_multimesh() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 9876
 	_cell_lump_range.clear()
-	for i in _wall_cells.size():
-		var lump_cell_i := _wall_cells[i]
+	for i in bush_cells.size():
+		var lump_cell_i := bush_cells[i]
 		var lp := _pos(lump_cell_i)
 		var cell_h := body_rng.randf_range(0.85, 1.25)  # reseeded, but deterministic
 		var base_y := WALL_HEIGHT * cell_h
@@ -831,6 +2033,7 @@ func _build_wall_multimesh() -> void:
 
 	var lump_mm := MultiMesh.new()
 	lump_mm.transform_format = MultiMesh.TRANSFORM_3D
+	lump_mm.use_colors = true
 	lump_mm.mesh = lump_mesh
 	lump_mm.instance_count = lump_transforms.size()
 	for i in lump_transforms.size():
@@ -844,6 +2047,7 @@ func _build_wall_multimesh() -> void:
 
 func _make_leaf(cell: Vector2i) -> void:
 	var node := Node3D.new()
+	node.set_meta("fruit_variant", _fruit_rng.randi_range(0, 4))
 	node.set_script(Leaf3DScript)
 	node.position = _pos(cell)
 	objects_layer.add_child(node)
@@ -851,11 +2055,234 @@ func _make_leaf(cell: Vector2i) -> void:
 
 func _make_spider(cell: Vector2i) -> void:
 	var node := Node3D.new()
-	node.set_meta("spider_variant", _spider_rng.randi_range(0, 5))
+	node.set_meta("spider_variant", int(_spider_rng.randi()))
+	node.set_meta("spider_heading", Vector2i.ZERO)
+	node.set_meta("track_player", false)
+	node.set_meta("spider_moving", false)
+	node.set_meta("spider_move_t", 0.0)
+	node.set_meta("spider_next_cell", cell)
 	node.set_script(Spider3DScript)
 	node.position = _pos(cell)
 	objects_layer.add_child(node)
 	hazards[cell] = "spider"
+	_hazard_nodes[cell] = node
+
+func _is_spider_destination_reserved(cell: Vector2i) -> bool:
+	for spider_node in _hazard_nodes.values():
+		var node := spider_node as Node3D
+		if node == null or not is_instance_valid(node):
+			continue
+		if not bool(node.get_meta("spider_moving", false)):
+			continue
+		var reserved := node.get_meta("spider_next_cell", Vector2i(-9999, -9999)) as Vector2i
+		if reserved == cell:
+			return true
+	return false
+
+func _is_spider_cell_walkable(cell: Vector2i, from_cell: Vector2i) -> bool:
+	if not _is_inside_maze(cell):
+		return false
+	if wall_set.has(cell):
+		return false
+	if cell == exit_cell:
+		return false
+	var h := String(hazards.get(cell, ""))
+	if h == "spike" or h == "mushroom":
+		return false
+	if cell != from_cell and h == "spider":
+		return false
+	if cell != from_cell and _is_spider_destination_reserved(cell):
+		return false
+	return true
+
+func _trigger_spider_catch() -> void:
+	if _game_over_pending:
+		return
+	_game_over_pending = true
+	is_busy = true
+	_allow_busy_release = false
+	_set_move_sound_active(false)
+	if _snd_spider:
+		_snd_spider.pitch_scale = 1.0
+		_snd_spider.play()
+	call_deferred("_lose")
+
+func _find_spider_path_direction(from_cell: Vector2i, to_cell: Vector2i) -> Vector2i:
+	if from_cell == to_cell:
+		return Vector2i.ZERO
+
+	var dirs: Array[Vector2i] = [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]
+	var queue: Array[Vector2i] = [from_cell]
+	var visited: Dictionary = {from_cell: true}
+	var parent: Dictionary = {}
+	var head := 0
+
+	while head < queue.size():
+		var cur: Vector2i = queue[head]
+		head += 1
+		if cur == to_cell:
+			break
+		for dir in dirs:
+			var next := cur + dir
+			if visited.has(next):
+				continue
+			if next != to_cell and not _is_spider_cell_walkable(next, from_cell):
+				continue
+			visited[next] = true
+			parent[next] = cur
+			queue.append(next)
+
+	if not visited.has(to_cell):
+		return Vector2i.ZERO
+
+	var step := to_cell
+	while parent.has(step) and parent[step] != from_cell:
+		step = parent[step] as Vector2i
+	if not parent.has(step) and step != to_cell:
+		return Vector2i.ZERO
+	return step - from_cell
+
+func _step_spider(old_cell: Vector2i, node: Node3D) -> void:
+	if node == null or not is_instance_valid(node):
+		hazards.erase(old_cell)
+		_hazard_nodes.erase(old_cell)
+		return
+	if bool(node.get_meta("spider_moving", false)):
+		return
+
+	var to_player := player_cell - old_cell
+	var player_dist := sqrt(float(to_player.x * to_player.x + to_player.y * to_player.y))
+	var chasing := player_dist <= SPIDER_CHASE_RADIUS
+	node.set_meta("track_player", chasing)
+
+	var move_chance := SPIDER_CHASE_MOVE_CHANCE if chasing else SPIDER_ROAM_MOVE_CHANCE
+	if randf() > move_chance:
+		return
+
+	var dirs: Array[Vector2i] = [Vector2i.UP, Vector2i.DOWN, Vector2i.LEFT, Vector2i.RIGHT]
+	var legal_dirs: Array[Vector2i] = []
+	for dir in dirs:
+		var next := old_cell + dir
+		if _is_spider_cell_walkable(next, old_cell):
+			legal_dirs.append(dir)
+	if legal_dirs.is_empty():
+		return
+
+	var chosen_dir := legal_dirs[0]
+	if chasing:
+		var path_dir := _find_spider_path_direction(old_cell, player_cell)
+		if path_dir != Vector2i.ZERO and legal_dirs.has(path_dir):
+			chosen_dir = path_dir
+		else:
+			var best_d2 := INF
+			for dir in legal_dirs:
+				var next := old_cell + dir
+				var to_p := player_cell - next
+				var d2 := float(to_p.x * to_p.x + to_p.y * to_p.y)
+				if d2 < best_d2:
+					best_d2 = d2
+					chosen_dir = dir
+	else:
+		var heading := node.get_meta("spider_heading", Vector2i.ZERO) as Vector2i
+		if heading != Vector2i.ZERO and legal_dirs.has(heading) and _spider_rng.randf() < 0.62:
+			chosen_dir = heading
+		else:
+			chosen_dir = legal_dirs[_spider_rng.randi_range(0, legal_dirs.size() - 1)]
+
+	var new_cell := old_cell + chosen_dir
+	if not _is_spider_cell_walkable(new_cell, old_cell):
+		return
+
+	node.set_meta("spider_heading", chosen_dir)
+	node.set_meta("spider_moving", true)
+	node.set_meta("spider_move_t", 0.0)
+	node.set_meta("spider_next_cell", new_cell)
+
+func _update_spider_motion(delta: float) -> void:
+	var spider_cells: Array[Vector2i] = []
+	for cell in hazards.keys():
+		if String(hazards.get(cell, "")) == "spider":
+			spider_cells.append(cell)
+
+	var arrivals: Array[Dictionary] = []
+	for from_cell in spider_cells:
+		var node := _hazard_nodes.get(from_cell) as Node3D
+		if node == null or not is_instance_valid(node):
+			continue
+		if not bool(node.get_meta("spider_moving", false)):
+			continue
+
+		var to_cell := node.get_meta("spider_next_cell", from_cell) as Vector2i
+		var t := float(node.get_meta("spider_move_t", 0.0))
+		t += delta / maxf(SPIDER_TRAVEL_TIME, 0.001)
+		var clamped_t := clampf(t, 0.0, 1.0)
+		node.set_meta("spider_move_t", clamped_t)
+
+		var from_pos := _pos(from_cell)
+		var to_pos := _pos(to_cell)
+		node.position = from_pos.lerp(to_pos, clamped_t)
+		if int(_fog_state.get(from_cell, FOG_HIDDEN)) == FOG_VISIBLE or int(_fog_state.get(to_cell, FOG_HIDDEN)) == FOG_VISIBLE:
+			node.visible = true
+
+		if clamped_t >= 1.0:
+			arrivals.append({"from": from_cell, "to": to_cell, "node": node})
+
+	for item in arrivals:
+		if _game_over_pending:
+			return
+		var from_cell := item["from"] as Vector2i
+		var to_cell := item["to"] as Vector2i
+		var node := item["node"] as Node3D
+		if node == null or not is_instance_valid(node):
+			continue
+		if String(hazards.get(from_cell, "")) != "spider":
+			continue
+		hazards.erase(from_cell)
+		_hazard_nodes.erase(from_cell)
+		hazards[to_cell] = "spider"
+		_hazard_nodes[to_cell] = node
+		node.set_meta("spider_moving", false)
+		node.set_meta("spider_move_t", 0.0)
+		node.position = _pos(to_cell)
+		node.visible = int(_fog_state.get(to_cell, FOG_HIDDEN)) == FOG_VISIBLE
+		if to_cell == player_cell:
+			_trigger_spider_catch()
+
+func _process_spiders(delta: float) -> void:
+	if _game_over_pending:
+		return
+	_update_spider_motion(delta)
+	if _game_over_pending:
+		return
+	_spider_move_timer += delta
+	if _spider_move_timer < SPIDER_MOVE_INTERVAL:
+		return
+	_spider_move_timer -= SPIDER_MOVE_INTERVAL
+
+	var spider_cells: Array[Vector2i] = []
+	for cell in hazards.keys():
+		if String(hazards.get(cell, "")) == "spider":
+			spider_cells.append(cell)
+
+	for old_cell in spider_cells:
+		if _game_over_pending:
+			return
+		if String(hazards.get(old_cell, "")) != "spider":
+			continue
+		var node := _hazard_nodes.get(old_cell) as Node3D
+		_step_spider(old_cell, node)
+
+func _make_spike(cell: Vector2i) -> void:
+	var node := Node3D.new()
+	node.set_meta("spike_variant", int(_spike_rng.randi()))
+	var spike_script := load("res://scripts/spike_3d.gd") as Script
+	if spike_script == null:
+		return
+	node.set_script(spike_script)
+	node.position = _pos(cell)
+	objects_layer.add_child(node)
+	hazards[cell] = "spike"
+	_hazard_nodes[cell] = node
 
 func _make_exit(cell: Vector2i) -> void:
 	exit_node = Node3D.new()
@@ -1092,7 +2519,6 @@ func _process(delta: float) -> void:
 	# Diagnostic heartbeat every 5 seconds
 	_diag_timer += delta
 	if _diag_timer >= 5.0:
-		var tree := get_tree()
 		var node_count := Performance.get_monitor(Performance.OBJECT_NODE_COUNT)
 		var obj_count := Performance.get_monitor(Performance.OBJECT_COUNT)
 		var mem_static := Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0
@@ -1106,6 +2532,22 @@ func _process(delta: float) -> void:
 
 	# ── Bush biting ──
 	_process_bite(delta)
+	if _lantern_timer > 0.0:
+		_lantern_timer = maxf(0.0, _lantern_timer - delta)
+		var current_radius := _effective_reveal_radius()
+		if absf(current_radius - _last_effective_reveal_radius) > 0.001:
+			_refresh_fog_visibility(player_cell)
+		_update_hud()
+	if _dizzy_timer > 0.0:
+		_dizzy_timer = maxf(0.0, _dizzy_timer - delta)
+		_update_hud()
+	if _wormhole_cooldown > 0.0:
+		_wormhole_cooldown = maxf(0.0, _wormhole_cooldown - delta)
+	for wormhole in _wormhole_nodes.values():
+		var node := wormhole as Node3D
+		if node:
+			node.rotation.y += delta * 1.6
+	_process_spiders(delta)
 
 	# ── Debug camera controls ──
 	# ROTATION:  Q/E = tilt (X), Z/C = yaw (Y), R/T = roll (Z)
@@ -1175,7 +2617,7 @@ func _process(delta: float) -> void:
 	var crawl_alpha := 0.0
 	if _move_anim_remaining > 0.0:
 		_crawl_motion_time += delta * (5.0 if _is_reversing else 7.0)
-		var anim_duration := REVERSE_MOVE_DURATION if _is_reversing else FORWARD_MOVE_DURATION
+		var anim_duration := (REVERSE_MOVE_DURATION if _is_reversing else FORWARD_MOVE_DURATION) / _effective_move_speed_mult()
 		crawl_alpha = sin(clampf((1.0 - (_move_anim_remaining / anim_duration)) * PI, 0.0, PI))
 	for i in segment_nodes.size():
 		if i < _segment_targets.size():
@@ -1223,7 +2665,7 @@ func _process(delta: float) -> void:
 	if dir == Vector2i.ZERO:
 		move_timer = 0.0
 		return
-	var repeat_delay := REVERSE_REPEAT_DELAY if dir == -facing else MOVE_REPEAT_DELAY
+	var repeat_delay := (REVERSE_REPEAT_DELAY if dir == -facing else MOVE_REPEAT_DELAY) / _effective_move_speed_mult()
 	move_timer += delta
 	if move_timer >= repeat_delay:
 		move_timer -= repeat_delay
@@ -1308,15 +2750,31 @@ func _move_backward() -> void:
 
 	_segment_targets = _calc_positions()
 	_segment_target_rots = _calc_target_rotations()
+	player_cell = segment_cells[0]
 	var head3 := _pos(segment_cells[0])
 	_cam_look_target = _clamp_cam_look_target(Vector3(head3.x, 0.8, head3.z))
+	_refresh_fog_visibility(player_cell)
 
 	# When reversing, the tail is the leading end — check it for pickups/hazards
 	var lead_cell := new_tail
+	_collect_bonus(lead_cell)
+	var teleported_lead := _try_wormhole_teleport(lead_cell)
+	if teleported_lead != lead_cell:
+		lead_cell = teleported_lead
+		segment_cells[0] = lead_cell
+		player_cell = lead_cell
+		_segment_targets = _calc_positions()
+		_segment_target_rots = _calc_target_rotations()
+		var tele_head3 := _pos(lead_cell)
+		_cam_look_target = _clamp_cam_look_target(Vector3(tele_head3.x, 0.8, tele_head3.z))
+		_collect_bonus(lead_cell)
+		_refresh_fog_visibility(player_cell)
 	if leaves.has(lead_cell):
+		var collected_variant := int((leaves[lead_cell] as Node).get_meta("fruit_variant", -1))
 		leaves[lead_cell].queue_free()
 		leaves.erase(lead_cell)
 		leaves_left -= 1
+		_register_collected_fruit(collected_variant)
 		if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_expression"):
 			segment_nodes[0].set_expression("happy", 1.2)
 		# Grow from the head side (opposite of travel direction)
@@ -1342,18 +2800,40 @@ func _move_backward() -> void:
 	_update_taper()
 	for sn in segment_nodes:
 		sn.wiggle_legs(0.65)
-	_move_anim_remaining = REVERSE_MOVE_DURATION
+	_move_anim_remaining = REVERSE_MOVE_DURATION / _effective_move_speed_mult()
 	_set_move_sound_active(true)
 
 	if hazards.has(lead_cell):
-		_allow_busy_release = false
-		await _lose()
-		return
-	if leaves_left <= 0 and exit_node:
+		var hazard_type := String(hazards[lead_cell])
+		if hazard_type == "spider":
+			_game_over_pending = true
+			_allow_busy_release = false
+			await _lose()
+			return
+		elif hazard_type == "spike":
+			if _snd_ouch:
+				_snd_ouch.pitch_scale = randf_range(0.95, 1.08)
+				_snd_ouch.play()
+			if not _apply_spike_damage():
+				_allow_busy_release = false
+				await _lose()
+				return
+			_update_hud()
+		elif hazard_type == "mushroom":
+			_remove_mushroom(lead_cell)
+			if _snd_spider:
+				_snd_spider.pitch_scale = 0.85
+				_snd_spider.play()
+			if not _apply_mushroom_debuff():
+				_allow_busy_release = false
+				await _lose()
+				return
+			_update_hud()
+	if _objective_complete() and exit_node:
 		exit_node.set_meta("open", true)
-	if lead_cell == exit_cell and leaves_left <= 0:
+	if lead_cell == exit_cell and _objective_complete():
 		_allow_busy_release = false
-		await _win()
+		_win()
 		return
 
 	_update_hud()
@@ -1371,12 +2851,28 @@ func _move_to(target: Vector2i) -> void:
 	_segment_target_rots = _calc_target_rotations()
 	var tgt3 := _pos(target)
 	_cam_look_target = _clamp_cam_look_target(Vector3(tgt3.x, 0.8, tgt3.z))
+	player_cell = target
+	_collect_bonus(target)
+	_refresh_fog_visibility(player_cell)
+	var teleported_target := _try_wormhole_teleport(target)
+	if teleported_target != target:
+		target = teleported_target
+		segment_cells[0] = target
+		player_cell = target
+		_segment_targets = _calc_positions()
+		_segment_target_rots = _calc_target_rotations()
+		var tele_tgt3 := _pos(target)
+		_cam_look_target = _clamp_cam_look_target(Vector3(tele_tgt3.x, 0.8, tele_tgt3.z))
+		_collect_bonus(target)
+		_refresh_fog_visibility(player_cell)
 
 	# Collect leaf
 	if leaves.has(target):
+		var collected_variant := int((leaves[target] as Node).get_meta("fruit_variant", -1))
 		leaves[target].queue_free()
 		leaves.erase(target)
 		leaves_left -= 1
+		_register_collected_fruit(collected_variant)
 		# Happy sparkle leaf sound
 		if _snd_leaf:
 			_snd_leaf.pitch_scale = randf_range(0.9, 1.15)
@@ -1400,28 +2896,102 @@ func _move_to(target: Vector2i) -> void:
 	_update_taper()
 	for n in segment_nodes:
 		n.wiggle_legs(1.0)
-	_move_anim_remaining = FORWARD_MOVE_DURATION
+	_move_anim_remaining = FORWARD_MOVE_DURATION / _effective_move_speed_mult()
 	_set_move_sound_active(true)
 
 	if hazards.has(target):
-		_allow_busy_release = false
-		if _snd_spider:
-			_snd_spider.play()
-		await _lose()
-		return
-	if leaves_left <= 0 and exit_node:
+		var hazard_type := String(hazards[target])
+		if hazard_type == "spider":
+			_game_over_pending = true
+			_allow_busy_release = false
+			if _snd_spider:
+				_snd_spider.play()
+			await _lose()
+			return
+		elif hazard_type == "spike":
+			if _snd_ouch:
+				_snd_ouch.pitch_scale = randf_range(0.95, 1.08)
+				_snd_ouch.play()
+			if not _apply_spike_damage():
+				_allow_busy_release = false
+				await _lose()
+				return
+			_update_hud()
+		elif hazard_type == "mushroom":
+			_remove_mushroom(target)
+			if _snd_spider:
+				_snd_spider.pitch_scale = 0.85
+				_snd_spider.play()
+			if not _apply_mushroom_debuff():
+				_allow_busy_release = false
+				await _lose()
+				return
+			_update_hud()
+	if _objective_complete() and exit_node:
 		exit_node.set_meta("open", true)
-	if target == exit_cell and leaves_left <= 0:
+	if target == exit_cell and _objective_complete():
 		_allow_busy_release = false
 		if _snd_portal:
 			_snd_portal.play()
-		await _win()
+		_win()
 		return
 
 	_update_hud()
 
 func _bump() -> void:
 	pass
+
+func _try_wormhole_teleport(entry_cell: Vector2i) -> Vector2i:
+	if _wormhole_cooldown > 0.0:
+		return entry_cell
+	if not _wormholes.has(entry_cell):
+		return entry_cell
+	var dest := _wormholes[entry_cell] as Vector2i
+	if not _is_inside_maze(dest) or wall_set.has(dest):
+		return entry_cell
+
+	_wormhole_cooldown = WORMHOLE_TELEPORT_COOLDOWN
+	if _snd_portal:
+		_snd_portal.pitch_scale = 1.12
+		_snd_portal.play()
+	if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_expression"):
+		segment_nodes[0].set_expression("surprised", 0.35)
+	return dest
+
+func _apply_spike_damage() -> bool:
+	_shoe_speed_active = false
+	# Keep at least head + one segment alive; otherwise the hit is fatal.
+	if segment_cells.size() <= 2:
+		return false
+
+	segment_cells.pop_back()
+	if not segment_nodes.is_empty():
+		var removed: Node3D = segment_nodes.pop_back()
+		if removed:
+			removed.queue_free()
+
+	for i in segment_nodes.size():
+		segment_nodes[i].set_meta("seg_index", i)
+		if segment_nodes[i].has_method("update_seg_type"):
+			segment_nodes[i].update_seg_type(_seg_type(i))
+
+	_segment_targets = _calc_positions()
+	_segment_target_rots = _calc_target_rotations()
+	_update_taper()
+	_update_body_shadow()
+	if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_expression"):
+		segment_nodes[0].set_expression("surprised", 0.7)
+	return true
+
+func _apply_mushroom_debuff() -> bool:
+	_dizzy_timer = maxf(_dizzy_timer, DIZZY_DURATION)
+	return _apply_spike_damage()
+
+func _bite_duration_for_length() -> float:
+	# Longer caterpillar chews faster.
+	var extra_len := maxi(segment_cells.size() - 5, 0)
+	var speed_mult := 1.0 + float(extra_len) * 0.08
+	return maxf(2.2, BITE_DURATION / speed_mult)
 
 # ── Bush biting ──
 
@@ -1432,6 +3002,8 @@ func _start_bite() -> void:
 	var target_cell := segment_cells[0] + facing
 	if not wall_set.has(target_cell):
 		return
+	if not _bush_wall_cells.has(target_cell):
+		return
 	# Can't bite border walls (edges of the maze)
 	if target_cell.x <= 0 or target_cell.x >= _maze_w - 1:
 		return
@@ -1439,7 +3011,7 @@ func _start_bite() -> void:
 		return
 	_bite_target = target_cell
 	_is_biting = true
-	_bite_timer = BITE_DURATION
+	_bite_timer = _bite_duration_for_length()
 	_bite_face_loop_timer = BITE_FACE_LOOP_INTERVAL
 	_bite_face_is_biting = true
 	is_busy = true
@@ -1455,9 +3027,9 @@ func _start_bite() -> void:
 		_eat_wall(_bite_target)
 		_bite_count.erase(_bite_target)
 
-	# Chomp! – play the full bite.wav (pitch fixed so duration stays ~6 s)
+	# Chomp! Faster bite when caterpillar is longer.
 	if _snd_bite:
-		_snd_bite.pitch_scale = 1.0
+		_snd_bite.pitch_scale = clampf(BITE_DURATION / maxf(_bite_timer, 0.01), 1.0, 2.2)
 		_snd_bite.play()
 	# Start with biting, then alternate biting/chewing until bite ends.
 	if segment_nodes.size() > 0 and segment_nodes[0].has_method("set_expression"):
@@ -1619,10 +3191,15 @@ func _eat_wall(cell: Vector2i) -> void:
 	# Remove from game logic
 	wall_set.erase(cell)
 	_wall_cells.erase(cell)
+	_bush_wall_cells.erase(cell)
+	_rock_wall_cells.erase(cell)
 	# Remove old multimesh instances and rebuild without this cell
 	if _wall_mm_inst:
 		_wall_mm_inst.queue_free()
 		_wall_mm_inst = null
+	if _rock_mm_inst:
+		_rock_mm_inst.queue_free()
+		_rock_mm_inst = null
 	if _lump_mm_inst:
 		_lump_mm_inst.queue_free()
 		_lump_mm_inst = null
@@ -1660,7 +3237,16 @@ func _win() -> void:
 		vbox.get_node("NextButton").text = "Next Level"
 
 func _update_hud() -> void:
-	hud_label.text = "Level %d   Leaves: %d   Length: %d" % [current_level + 1, leaves_left, segment_cells.size()]
+	var radius_text := "%.1f" % _effective_reveal_radius()
+	var buff_text := ""
+	if _lantern_timer > 0.0:
+		buff_text = "   Lantern: %.0fs" % ceil(_lantern_timer)
+	if _shoe_speed_active:
+		buff_text += "   Speed: Shoes"
+	if _dizzy_timer > 0.0:
+		buff_text += "   Dizzy: %.0fs" % ceil(_dizzy_timer)
+	var objective_text := _objective_status_text()
+	hud_label.text = "Level %d   Fruits: %d   %s   Length: %d   Light: %s%s" % [current_level + 1, leaves_left, objective_text, segment_cells.size(), radius_text, buff_text]
 
 func _on_retry() -> void:
 	load_level(current_level)

@@ -174,6 +174,27 @@ def gen_spider():
         out.append(s * env * 0.7)
     return out
 
+def gen_ouch():
+    """Cartoony ouch yelp for spike hit."""
+    dur = 0.28
+    n = int(RATE * dur)
+    out = []
+    for i in range(n):
+        t = i / RATE
+        p = t / dur
+        # Falling yelp pitch with slight wobble.
+        freq = 980 - 520 * p + 45 * math.sin(2 * math.pi * 11 * t)
+        env = (min(1.0, t / 0.015) * max(0.0, 1.0 - p)) ** 0.7
+        phase = 2 * math.pi * freq * t
+        s = 0.62 * math.sin(phase)
+        s += 0.24 * math.sin(phase * 1.95 + 0.4)
+        s += 0.10 * math.sin(phase * 0.53)
+        # Tiny initial click to make impact feel immediate.
+        if t < 0.006:
+            s += (1.0 - t / 0.006) * 0.35
+        out.append(s * env * 0.75)
+    return out
+
 if __name__ == "__main__":
     outdir = os.path.join(os.path.dirname(__file__), "assets", "sounds")
     os.makedirs(outdir, exist_ok=True)
@@ -184,6 +205,7 @@ if __name__ == "__main__":
         "leaf_pickup.wav": gen_leaf(),
         "portal_enter.wav": gen_portal(),
         "spider_alert.wav": gen_spider(),
+        "ouch.wav": gen_ouch(),
     }
     for name, samples in sounds.items():
         path = os.path.join(outdir, name)
