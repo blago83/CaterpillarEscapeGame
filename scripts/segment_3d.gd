@@ -16,6 +16,12 @@ var _imported_head: Node3D
 var _imported_head_key := ""
 var _foot_left: MeshInstance3D
 var _foot_right: MeshInstance3D
+var _foot_left_rest := Vector3.ZERO
+var _foot_right_rest := Vector3.ZERO
+var _feet_small := false
+var _shoe_left: Node3D
+var _shoe_right: Node3D
+var _shoes_active := false
 var _leg_phase := 0.0
 var _base_mesh_y := 0.30
 var _crawl_blend := 0.0
@@ -1001,6 +1007,7 @@ func _add_tail_tip(radius: float) -> void:
 
 func _add_feet(seg_radius: float, is_small: bool) -> void:
 	# Cute rounded yellow-green feet
+	_feet_small = is_small
 	var foot_mat := StandardMaterial3D.new()
 	foot_mat.albedo_color = Color(0.70, 0.82, 0.30)
 	foot_mat.specular = 0.2
@@ -1046,10 +1053,100 @@ func _add_feet(seg_radius: float, is_small: bool) -> void:
 
 		if side < 0:
 			_foot_left = foot
+			_foot_left_rest = foot.position
 		else:
 			_foot_right = foot
+			_foot_right_rest = foot.position
 
 	_leg_phase = float(get_meta("seg_index", 0)) * 0.5 * PI
+	_update_shoe_visuals()
+
+func _clear_feet() -> void:
+	for node in [_shoe_left, _shoe_right, _foot_left, _foot_right]:
+		if is_instance_valid(node):
+			node.queue_free()
+	_shoe_left = null
+	_shoe_right = null
+	_foot_left = null
+	_foot_right = null
+
+func _build_sneaker(is_small: bool, side: float) -> Node3D:
+	var root := Node3D.new()
+	var shoe_scale := 0.9
+	var body_mat := StandardMaterial3D.new()
+	body_mat.albedo_color = Color(0.82, 0.10, 0.12)
+	body_mat.roughness = 0.35
+	body_mat.specular = 0.38
+	var sole_mat := StandardMaterial3D.new()
+	sole_mat.albedo_color = Color(0.96, 0.96, 0.98)
+	sole_mat.roughness = 0.82
+	var lace_mat := StandardMaterial3D.new()
+	lace_mat.albedo_color = Color(0.98, 0.98, 0.98)
+	lace_mat.roughness = 0.70
+
+	var body := MeshInstance3D.new()
+	var body_mesh := BoxMesh.new()
+	body_mesh.size = (Vector3(0.16, 0.08, 0.22) if is_small else Vector3(0.18, 0.09, 0.24)) * shoe_scale
+	body.mesh = body_mesh
+	body.material_override = body_mat
+	body.position = Vector3(0.0, 0.005, 0.0)
+	body.rotation_degrees = Vector3(0.0, -side * 8.0, 0.0)
+	body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(body)
+
+	var sole := MeshInstance3D.new()
+	var sole_mesh := BoxMesh.new()
+	sole_mesh.size = (Vector3(0.18, 0.03, 0.25) if is_small else Vector3(0.20, 0.035, 0.27)) * shoe_scale
+	sole.mesh = sole_mesh
+	sole.material_override = sole_mat
+	sole.position = Vector3(0.0, -0.045, 0.0)
+	sole.rotation_degrees = body.rotation_degrees
+	sole.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(sole)
+
+	for lace_z in [-0.045, 0.0, 0.045]:
+		var lace := MeshInstance3D.new()
+		var lace_mesh := BoxMesh.new()
+		lace_mesh.size = Vector3(0.08, 0.01, 0.02) * shoe_scale
+		lace.mesh = lace_mesh
+		lace.material_override = lace_mat
+		lace.position = Vector3(0.0, 0.03, lace_z)
+		lace.rotation_degrees = body.rotation_degrees
+		lace.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(lace)
+
+	return root
+
+func _update_shoe_visuals() -> void:
+	if not _mesh or not _foot_left or not _foot_right:
+		return
+	if _shoes_active:
+		if _shoe_left == null or not is_instance_valid(_shoe_left):
+			_shoe_left = _build_sneaker(_feet_small, -1.0)
+			_mesh.add_child(_shoe_left)
+		if _shoe_right == null or not is_instance_valid(_shoe_right):
+			_shoe_right = _build_sneaker(_feet_small, 1.0)
+			_mesh.add_child(_shoe_right)
+		_shoe_left.visible = true
+		_shoe_right.visible = true
+		_align_shoes()
+	else:
+		if _shoe_left and is_instance_valid(_shoe_left):
+			_shoe_left.visible = false
+		if _shoe_right and is_instance_valid(_shoe_right):
+			_shoe_right.visible = false
+
+func _align_shoes() -> void:
+	if _shoe_left and is_instance_valid(_shoe_left):
+		_shoe_left.position = _foot_left.position + Vector3(0.0, 0.01, 0.01)
+		_shoe_left.rotation = _foot_left.rotation
+	if _shoe_right and is_instance_valid(_shoe_right):
+		_shoe_right.position = _foot_right.position + Vector3(0.0, 0.01, 0.01)
+		_shoe_right.rotation = _foot_right.rotation
+
+func set_shoes_active(active: bool) -> void:
+	_shoes_active = active
+	_update_shoe_visuals()
 
 # ── Blink & expression animation ──
 
@@ -1062,14 +1159,37 @@ func _process(delta: float) -> void:
 		_crawl_blend = maxf(_crawl_blend - delta * 1.35, 0.0)
 	else:
 		_crawl_speed = 0.0
-	var crawl_wave := sin(_crawl_phase)
+	var stride_phase := _crawl_phase + _leg_phase
+	var crawl_wave := sin(stride_phase)
 	var crawl_lift := crawl_wave * 0.065 * _crawl_blend
 	if _mesh:
-		_mesh.position.y = lerpf(_mesh.position.y, _base_mesh_y + crawl_lift, delta * 10.0)
+		_mesh.position.y = lerpf(_mesh.position.y, _base_mesh_y + crawl_lift, minf(delta * 10.0, 1.0))
+		var seg_type := String(get_meta("seg_type", "body"))
+		if seg_type != "head":
+			var body_pitch := 0.05 * sin(stride_phase + PI * 0.20) * _crawl_blend
+			var body_roll := 0.035 * sin(stride_phase * 0.5) * _crawl_blend
+			_mesh.rotation.x = lerpf(_mesh.rotation.x, body_pitch, minf(delta * 8.0, 1.0))
+			_mesh.rotation.z = lerpf(_mesh.rotation.z, body_roll, minf(delta * 8.0, 1.0))
 	if _foot_left and _foot_right:
-		var foot_slide := crawl_wave * 0.06 * _crawl_blend
-		_foot_left.position.z = lerpf(_foot_left.position.z, -0.02 + foot_slide, delta * 10.0)
-		_foot_right.position.z = lerpf(_foot_right.position.z, -0.02 - foot_slide, delta * 10.0)
+		var left_stride := sin(stride_phase)
+		var right_stride := sin(stride_phase + PI)
+		var left_lift := maxf(0.0, sin(stride_phase + PI * 0.12))
+		var right_lift := maxf(0.0, sin(stride_phase + PI + PI * 0.12))
+		var foot_slide_amp := 0.045 * _crawl_blend
+		var foot_lift_amp := 0.030 * _crawl_blend
+		var foot_sway_amp := 0.016 * _crawl_blend
+		var foot_roll_amp := 0.28 * _crawl_blend
+		var foot_yaw_amp := 0.16 * _crawl_blend
+
+		var left_target := _foot_left_rest + Vector3(-left_lift * foot_sway_amp, left_lift * foot_lift_amp, left_stride * foot_slide_amp)
+		var right_target := _foot_right_rest + Vector3(right_lift * foot_sway_amp, right_lift * foot_lift_amp, right_stride * foot_slide_amp)
+		var foot_blend := minf(delta * 10.0, 1.0)
+		var foot_rotation_blend := minf(delta * 9.0, 1.0)
+		_foot_left.position = _foot_left.position.lerp(left_target, foot_blend)
+		_foot_right.position = _foot_right.position.lerp(right_target, foot_blend)
+		_foot_left.rotation = _foot_left.rotation.lerp(Vector3(left_stride * 0.10, -foot_yaw_amp, -left_stride * foot_roll_amp), foot_rotation_blend)
+		_foot_right.rotation = _foot_right.rotation.lerp(Vector3(right_stride * 0.10, foot_yaw_amp, right_stride * foot_roll_amp), foot_rotation_blend)
+		_align_shoes()
 
 	# ── Idle behavior state machine ──
 	if _is_idle:
@@ -1484,6 +1604,7 @@ func _make_head_material() -> StandardMaterial3D:
 	return head_mat
 
 func update_seg_type(new_type: String) -> void:
+	var old_type := String(get_meta("seg_type", "body"))
 	set_meta("seg_type", new_type)
 	if not _mesh or not _mat:
 		return
@@ -1526,6 +1647,10 @@ func update_seg_type(new_type: String) -> void:
 			_mesh.scale = Vector3.ONE
 			_mesh.visible = true
 	_mesh.material_override = _mat
+	if old_type != new_type:
+		_clear_feet()
+		if new_type != "head":
+			_add_feet(sphere.radius, new_type == "tail")
 
 func flash_red() -> void:
 	if _mat is StandardMaterial3D:
